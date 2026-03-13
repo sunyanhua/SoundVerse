@@ -1,6 +1,10 @@
 {
-  "status": "IDLE",
-  "last_result": "SUCCESS",
-  "completed_tasks": 1,
-  "total_tasks": 1
+  "status": "COMPLETED",
+  "task_index": 1,
+  "total_tasks": 2,
+  "current_task": "更新PROGRESS.md",
+  "attempt": 1,
+  "last_start": "2026-03-13 14:35:00",
+  "completed_at": "2026-03-13 14:55:00",
+  "pid": 4268
 }
