@@ -1,0 +1,9 @@
+{
+  "api_key": "sk-9d6540caa8ed47bcb3ea21a2227089ad",
+  "model": "text-embedding-v4",
+  "workspace_id": null,
+  "headers": {},
+  "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "dimensions": 1024,
+  "status": "working"
+}

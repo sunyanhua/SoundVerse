@@ -1,0 +1,199 @@
+
+services:
+  # MySQL数据库
+  mysql:
+    image: mysql:8.0
+    container_name: soundverse-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: soundverse
+      MYSQL_USER: soundverse
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+    networks:
+      - soundverse-network
+
+  # Redis缓存
+  redis:
+    image: redis:7-alpine
+    container_name: soundverse-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - soundverse-network
+
+  # 后端API服务
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: soundverse-api
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=mysql+asyncmy://soundverse:password@mysql:3306/soundverse
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - MAX_SEGMENT_DURATION=8.0
+      - MIN_SEGMENT_DURATION=1.5
+      - SIMILARITY_THRESHOLD=0.25
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - soundverse-network
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: soundverse-celery-worker
+    depends_on:
+      - redis
+      - mysql
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=mysql+asyncmy://soundverse:password@mysql:3306/soundverse
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - MAX_SEGMENT_DURATION=8.0
+      - MIN_SEGMENT_DURATION=1.5
+      - SIMILARITY_THRESHOLD=0.25
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=4
+    networks:
+      - soundverse-network
+
+  # Celery Beat (定时任务)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: soundverse-celery-beat
+    depends_on:
+      - redis
+      - mysql
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=mysql+asyncmy://soundverse:password@mysql:3306/soundverse
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+      - MAX_SEGMENT_DURATION=8.0
+      - MIN_SEGMENT_DURATION=1.5
+      - SIMILARITY_THRESHOLD=0.25
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    command: celery -A tasks.celery_app beat --loglevel=info
+    networks:
+      - soundverse-network
+
+  # Prometheus监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: soundverse-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - soundverse-network
+
+  # Grafana仪表板
+  grafana:
+    image: grafana/grafana:latest
+    container_name: soundverse-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    networks:
+      - soundverse-network
+
+  # Nginx反向代理（可选）- 暂时禁用，因为配置文件路径问题
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: soundverse-nginx
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+  #     - ./docker/nginx/ssl:/etc/nginx/ssl
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - soundverse-network
+
+volumes:
+  mysql_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  soundverse-network:
+    driver: bridge

@@ -1,0 +1,62 @@
+<!-- 音频播放器组件 -->
+<view class="audio-player {{ customClass }}">
+  <view class="player-header">
+    <text class="audio-title">{{title}}</text>
+    <text class="audio-duration">{{formatDuration(duration)}}</text>
+  </view>
+
+  <view class="player-controls">
+    <button
+      class="control-btn {{ isPlaying ? 'playing' : '' }}"
+      bindtap="togglePlay"
+    >
+      <text class="btn-icon">{{isPlaying ? '⏸️' : '▶️'}}</text>
+    </button>
+
+    <slider
+      value="{{currentTime}}"
+      max="{{duration}}"
+      step="1"
+      activeColor="#FF6B6B"
+      backgroundColor="#e0e0e0"
+      block-size="16"
+      bindchange="onSliderChange"
+      bindchanging="onSliderChanging"
+      class="progress-slider"
+    />
+
+    <view class="time-display">
+      <text class="current-time">{{formatTime(currentTime)}}</text>
+      <text>/</text>
+      <text class="total-time">{{formatTime(duration)}}</text>
+    </view>
+  </view>
+
+  <view class="player-actions">
+    <button class="action-btn" bindtap="onFavorite">
+      <text class="action-icon">{{isFavorite ? '❤️' : '🤍'}}</text>
+      <text class="action-text">收藏</text>
+    </button>
+
+    <button class="action-btn" bindtap="onShare">
+      <text class="action-icon">↗️</text>
+      <text class="action-text">分享</text>
+    </button>
+
+    <button class="action-btn" bindtap="onDownload">
+      <text class="action-icon">⬇️</text>
+      <text class="action-text">下载</text>
+    </button>
+  </view>
+
+  <!-- 错误提示 -->
+  <view wx:if="{{ error }}" class="error-message">
+    <text>{{error}}</text>
+    <button class="retry-btn" bindtap="retry">重试</button>
+  </view>
+
+  <!-- 加载状态 -->
+  <view wx:if="{{ loading }}" class="loading">
+    <text>加载中...</text>
+  </view>
+</view>

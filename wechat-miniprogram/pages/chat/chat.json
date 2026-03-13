@@ -1,0 +1,10 @@
+{
+  "navigationBarTitleText": "聊天",
+  "enablePullDownRefresh": false,
+  "backgroundColor": "#f8f9fa",
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "audio-player": "/components/audio-player/audio-player",
+    "loading": "/components/loading/loading"
+  }
+}

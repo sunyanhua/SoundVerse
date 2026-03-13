@@ -1,0 +1,16 @@
+# 屏蔽这些，Token 消耗能降 80%
+.browsers/
+dist/
+build/
+音频素材/
+*.log
+__pycache__/
+node_modules/
+venv/
+.git/
+wechat-miniprogram/dist/
+backend/__pycache__/
+*.mp3
+*.wav
+*.m4a
+*.zip

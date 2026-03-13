@@ -1,0 +1,4 @@
+/* 音频上传组件样式 */
+.audio-uploader {
+  padding: 20rpx;
+}

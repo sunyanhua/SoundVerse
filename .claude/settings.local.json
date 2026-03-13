@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(chmod +x:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(rm:*)",
+      "Bash(mysql:*)",
+      "Bash(find \"D:\\\\GitHub\\\\SoundVerse\\\\backend\\\\storage\" -name \"ingestion_results_*.json\" -type f 2>/dev/null | head -10)",
+      "Bash(find \"D:\\\\GitHub\\\\SoundVerse\\\\backend\" -name \"*.log\" -type f 2>/dev/null | head -10)",
+      "Bash(find \"D:\\\\GitHub\\\\SoundVerse\\\\backend\\\\storage\" -name \"ingestion_results_*.json\" -type f 2>/dev/null | xargs ls -lt 2>/dev/null | head -10)"
+    ]
+  }
+}

@@ -1,0 +1,4 @@
+<!-- 音频上传组件 -->
+<view class="audio-uploader">
+  <text>音频上传组件</text>
+</view>

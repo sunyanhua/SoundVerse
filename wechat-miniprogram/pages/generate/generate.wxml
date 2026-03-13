@@ -1,0 +1,63 @@
+<!-- 生成页面 -->
+<wxs src="../../utils/format.wxs" module="tools" />
+<view class="generate-page">
+  <view class="header">
+    <text class="title">AI音频生成</text>
+    <text class="subtitle">输入描述，AI为您生成专属音频</text>
+  </view>
+
+  <view class="input-area">
+    <textarea
+      class="prompt-input"
+      placeholder="请输入您想要的音频描述，例如：'一段轻松的背景音乐，带有鸟鸣声'"
+      placeholder-class="placeholder"
+      value="{{prompt}}"
+      bindinput="onInputPrompt"
+      maxlength="500"
+      auto-height
+    />
+    <view class="input-footer">
+      <text class="char-count">{{prompt.length}}/500</text>
+    </view>
+  </view>
+
+  <view class="generate-actions">
+    <button
+      class="generate-btn"
+      type="primary"
+      bindtap="generateAudio"
+      disabled="{{ tools.isEmpty(prompt) || isGenerating }}"
+    >
+      {{isGenerating ? '生成中...' : '开始生成'}}
+    </button>
+    <button class="example-btn" bindtap="showExamples">查看示例</button>
+  </view>
+
+  <view class="generated-list" wx:if="{{ generatedAudios.length > 0 }}">
+    <view class="section-title">生成记录</view>
+    <view class="audio-item" wx:for="{{generatedAudios}}" wx:key="index" bindtap="playAudio" data-index="{{index}}">
+      <view class="audio-info">
+        <text class="audio-title">{{item.title}}</text>
+        <text class="audio-prompt">{{item.prompt}}</text>
+        <text class="audio-time">{{item.createdAt}}</text>
+      </view>
+      <view class="audio-action">
+        <text class="play-icon">▶️</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="empty-state" wx:else>
+    <view class="empty-icon">🎵</view>
+    <text class="empty-text">暂无生成记录</text>
+    <text class="empty-hint">输入描述，让AI为您创作音频</text>
+  </view>
+
+  <view class="tips">
+    <text class="tip-title">生成提示：</text>
+    <text class="tip-item">1. 描述越详细，生成效果越好</text>
+    <text class="tip-item">2. 支持音乐、音效、语音等多种类型</text>
+    <text class="tip-item">3. 生成需要一定时间，请耐心等待</text>
+    <text class="tip-item">4. 生成的音频可在聊天中使用</text>
+  </view>
+</view>

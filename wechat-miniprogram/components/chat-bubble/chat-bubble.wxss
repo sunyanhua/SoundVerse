@@ -1,0 +1,4 @@
+/* 聊天气泡组件样式 */
+.chat-bubble {
+  padding: 20rpx;
+}

@@ -1,0 +1,4 @@
+<!-- 聊天气泡组件 -->
+<view class="chat-bubble">
+  <text>聊天气泡组件</text>
+</view>

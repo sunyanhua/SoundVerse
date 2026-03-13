@@ -1,0 +1,69 @@
+// 格式化工具函数 - 视觉映射：将真实相似度映射为用户友好的显示百分比
+var formatScore = function(val) {
+  if (!val) return '0.0';
+
+  // 真实相似度（0.0-1.0）
+  var realScore = parseFloat(val);
+
+  // 视觉映射逻辑：给用户信心的显示
+  // 规则：真实分0.25-0.4映射为80%-95%
+  // 公式：display = 80 + (realScore - 0.25) * 100
+  if (realScore >= 0.25) {
+    // 确保它是第一名（我们假设这里已经是第一名）
+    var displayPercent = 80 + (realScore - 0.25) * 100;
+    // 限制在80-95之间，避免超出范围
+    if (displayPercent < 80) displayPercent = 80;
+    if (displayPercent > 95) displayPercent = 95;
+    return displayPercent.toFixed(1);
+  } else {
+    // 如果低于0.25，显示原始百分比（但通常不会显示，因为达不到播放门槛）
+    return (realScore * 100).toFixed(1);
+  }
+}
+
+// 格式化时间（秒 -> MM:SS）
+var formatTime = function(seconds) {
+  if (!seconds || seconds <= 0) return '00:00';
+
+  var mins = Math.floor(seconds / 60);
+  var secs = Math.floor(seconds % 60);
+
+  return mins.toString().padStart(2, '0') + ':' + secs.toString().padStart(2, '0');
+}
+
+// 格式化数字，保留指定小数位数
+var formatNumber = function(num, decimals) {
+  if (num === undefined || num === null) return '0';
+  if (decimals === undefined) decimals = 1;
+
+  return parseFloat(num).toFixed(decimals);
+}
+
+// 安全获取对象属性，提供默认值
+var safeGet = function(obj, prop, defaultValue) {
+  if (!obj || obj[prop] === undefined || obj[prop] === null) {
+    return defaultValue !== undefined ? defaultValue : '';
+  }
+  return obj[prop];
+}
+
+// 去除字符串两端空格
+var trim = function(str) {
+  if (!str) return '';
+  return str.toString().trim();
+}
+
+// 检查字符串是否为空（去除空格后）
+var isEmpty = function(str) {
+  if (!str) return true;
+  return trim(str).length === 0;
+}
+
+module.exports = {
+  formatScore: formatScore,
+  formatTime: formatTime,
+  formatNumber: formatNumber,
+  safeGet: safeGet,
+  trim: trim,
+  isEmpty: isEmpty
+}

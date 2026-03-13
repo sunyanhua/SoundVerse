@@ -1,0 +1,134 @@
+<!-- 聊天页面 -->
+<wxs src="../../utils/format.wxs" module="tools" />
+<view class="page-container">
+  <!-- 消息列表 -->
+  <scroll-view
+    scroll-y="true"
+    class="message-list"
+    scroll-into-view="{{scrollToId}}"
+    scroll-with-animation="true"
+    bindscrolltolower="loadMoreMessages"
+  >
+    <block wx:for="{{messages}}" wx:key="id">
+      <!-- 用户消息 -->
+      <view wx:if="{{item.role === 'user'}}" class="message-item user-message" id="msg-{{item.id}}">
+        <view class="message-bubble">
+          <text class="message-content">{{item.content}}</text>
+        </view>
+        <view class="message-time">{{formatTime(item.created_at)}}</view>
+      </view>
+
+      <!-- 助手消息（带音频） -->
+      <view wx:if="{{item.role === 'assistant'}}" class="message-item assistant-message {{item.audio_url ? 'has-audio' : 'text-only'}}" id="msg-{{item.id}}">
+        <view class="message-bubble">
+          <text class="message-content">{{item.content}}</text>
+
+          <!-- 音频播放器 -->
+          <view wx:if="{{item.audio_url}}" class="audio-container">
+            <view class="audio-player">
+              <view class="audio-controls">
+                <button
+                  class="play-btn {{currentAudioId === item.id ? 'playing' : ''}}"
+                  bindtap="playAudio"
+                  data-audio-url="{{item.audio_url}}"
+                  data-message-id="{{item.id}}"
+                >
+                  <text wx:if="{{!item.isPlaying}}">▶️</text>
+                  <text wx:if="{{item.isPlaying}}">⏸️</text>
+                </button>
+                <text class="audio-text">播放匹配的广播音频</text>
+              </view>
+
+              <!-- 播放进度 -->
+              <view wx:if="{{currentAudioId === item.id}}" class="audio-progress">
+                <progress
+                  percent="{{audioProgress}}"
+                  activeColor="#07c160"
+                  backgroundColor="#e0e0e0"
+                  stroke-width="6"
+                />
+                <text class="progress-text">{{audioProgress}}%</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- 音频信息 -->
+          <view wx:if="{{item.audio_segment_preview}}" class="audio-info">
+            <text class="audio-duration">时长: {{item.audio_segment_preview.duration || 0}}秒</text>
+            <text wx:if="{{item.similarity_score}}" class="similarity-score">
+              匹配度: {{ tools.formatScore(item.similarity_score) }}%
+            </text>
+          </view>
+        </view>
+        <view class="message-time">{{formatTime(item.created_at)}}</view>
+      </view>
+    </block>
+
+    <!-- 加载更多 -->
+    <view wx:if="{{isLoadingMore}}" class="load-more">
+      <text>加载中...</text>
+    </view>
+
+    <!-- 空状态 -->
+    <view wx:if="{{ !isLoading && messages.length === 0 }}" class="empty-state">
+      <view class="empty-icon">💬</view>
+      <text class="empty-text">开始你的智能音频聊天</text>
+      <text class="empty-hint">输入任何问题，AI会用匹配的广播音频回答你</text>
+
+      <!-- 快捷提问（仅在完全没有消息时显示） -->
+      <view wx:if="{{messages.length === 0}}" class="quick-questions">
+        <text class="quick-title">试试这些问题：</text>
+        <block wx:for="{{quickQuestions}}" wx:key="index">
+          <view class="quick-question" bindtap="sendQuickQuestion" data-question="{{item}}">
+            <text>{{item}}</text>
+          </view>
+        </block>
+      </view>
+    </view>
+  </scroll-view>
+
+  <!-- 快捷问题区域（有消息时显示） -->
+  <view wx:if="{{ quickQuestions.length > 0 && !isLoading && messages.length > 0 }}" class="quick-questions-container">
+    <text class="quick-title">试试这些问题：</text>
+    <view class="quick-questions-grid">
+      <block wx:for="{{quickQuestions}}" wx:key="index">
+        <view class="quick-question-item" bindtap="sendQuickQuestion" data-question="{{item}}">
+          <text>{{item}}</text>
+        </view>
+      </block>
+    </view>
+  </view>
+
+  <!-- 输入区域 -->
+  <view class="input-container">
+    <view class="input-wrapper">
+      <input
+        class="message-input"
+        placeholder="输入消息..."
+        value="{{inputValue}}"
+        bindinput="onInput"
+        bindconfirm="sendMessage"
+        confirm-type="send"
+        focus="{{autoFocus}}"
+      />
+      <button
+        class="send-btn {{ tools.trim(inputValue) ? 'active' : '' }}"
+        bindtap="sendMessage"
+        disabled="{{ tools.isEmpty(inputValue) || isLoading }}"
+      >
+        <text wx:if="{{!isSending}}">发送</text>
+        <text wx:if="{{isSending}}">发送中...</text>
+      </button>
+    </view>
+
+    <!-- 录音功能（可选） -->
+    <view class="voice-input" wx:if="{{false}}">
+      <button class="record-btn" bindtouchstart="startRecord" bindtouchend="stopRecord">
+        <text>按住说话</text>
+      </button>
+    </view>
+  </view>
+
+  <!-- 全局加载 -->
+  <loading wx:if="{{isLoading}}" />
+</view>

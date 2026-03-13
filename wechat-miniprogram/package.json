@@ -1,0 +1,32 @@
+{
+  "name": "soundverse-miniprogram",
+  "version": "1.0.0",
+  "description": "听听·原声态微信小程序",
+  "main": "app.ts",
+  "scripts": {
+    "dev": "npm run build && npm run watch",
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write \"**/*.{ts,js,json,wxml,wxss}\""
+  },
+  "keywords": [
+    "微信小程序",
+    "音频",
+    "AI",
+    "语音"
+  ],
+  "author": "SoundVerse Team",
+  "license": "MIT",
+  "dependencies": {
+    "vant-weapp": "^0.5.29"
+  },
+  "devDependencies": {
+    "@types/wechat-miniprogram": "^3.4.0",
+    "@typescript-eslint/eslint-plugin": "^5.30.0",
+    "@typescript-eslint/parser": "^5.30.0",
+    "eslint": "^8.18.0",
+    "prettier": "^2.7.1",
+    "typescript": "^4.7.4"
+  }
+}

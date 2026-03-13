@@ -1,0 +1,369 @@
+/* 聊天页面样式 */
+.page-container {
+  min-height: 100vh;
+  background-color: #f8f9fa;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 消息列表 */
+.message-list {
+  flex: 1;
+  padding: 20rpx 32rpx;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+/* 消息项 */
+.message-item {
+  margin-bottom: 32rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 用户消息（靠右） */
+.user-message {
+  align-items: flex-end;
+}
+
+/* 助手消息（靠左） */
+.assistant-message {
+  align-items: flex-start;
+}
+
+/* 消息气泡 */
+.message-bubble {
+  max-width: 70%;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  position: relative;
+  word-break: break-word;
+}
+
+/* 用户消息气泡样式 */
+.user-message .message-bubble {
+  background-color: #07c160;
+  color: #fff;
+  border-bottom-right-radius: 4rpx;
+}
+
+/* 助手消息气泡样式 */
+.assistant-message .message-bubble {
+  background-color: #fff;
+  color: #333;
+  border-bottom-left-radius: 4rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+
+/* 消息内容 */
+.message-content {
+  font-size: 32rpx;
+  line-height: 1.5;
+}
+
+/* 消息时间 */
+.message-time {
+  font-size: 24rpx;
+  color: #999;
+  margin-top: 8rpx;
+  padding: 0 8rpx;
+}
+
+.user-message .message-time {
+  text-align: right;
+}
+
+.assistant-message .message-time {
+  text-align: left;
+}
+
+/* 音频容器 */
+.audio-container {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 1rpx solid rgba(0, 0, 0, 0.1);
+}
+
+.user-message .audio-container {
+  border-top-color: rgba(255, 255, 255, 0.3);
+}
+
+/* 音频播放器 */
+.audio-player {
+  background-color: #f5f5f5;
+  border-radius: 12rpx;
+  padding: 16rpx;
+}
+
+.assistant-message .audio-player {
+  background-color: #f0f9ff;
+}
+
+/* 音频控制 */
+.audio-controls {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+/* 播放按钮 */
+.play-btn {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 50%;
+  background-color: #07c160;
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.play-btn::after {
+  border: none;
+}
+
+.play-btn.playing {
+  background-color: #ff6b6b;
+}
+
+.play-btn text {
+  color: #fff;
+  font-size: 24rpx;
+  line-height: 1;
+}
+
+/* 音频文本 */
+.audio-text {
+  font-size: 28rpx;
+  color: #666;
+  flex: 1;
+}
+
+/* 音频进度条 */
+.audio-progress {
+  margin-top: 12rpx;
+}
+
+.progress-text {
+  display: block;
+  font-size: 24rpx;
+  color: #999;
+  text-align: center;
+  margin-top: 4rpx;
+}
+
+/* 音频信息 */
+.audio-info {
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: #666;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.audio-duration {
+  background-color: #e8f4ff;
+  color: #1890ff;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+}
+
+.similarity-score {
+  background-color: #f0f9eb;
+  color: #52c41a;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+}
+
+/* 输入容器 */
+.input-container {
+  background-color: #fff;
+  border-top: 1rpx solid #e0e0e0;
+  padding: 20rpx 32rpx;
+  box-shadow: 0 -2rpx 12rpx rgba(0, 0, 0, 0.05);
+}
+
+/* 输入包装器 */
+.input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+/* 消息输入框 */
+.message-input {
+  flex: 1;
+  background-color: #f5f5f5;
+  border-radius: 40rpx;
+  padding: 20rpx 32rpx;
+  font-size: 32rpx;
+  color: #333;
+  height: 80rpx;
+  box-sizing: border-box;
+}
+
+.message-input::placeholder {
+  color: #999;
+}
+
+/* 发送按钮 */
+.send-btn {
+  width: 120rpx;
+  height: 80rpx;
+  border-radius: 40rpx;
+  background-color: #e0e0e0;
+  color: #999;
+  border: none;
+  padding: 0;
+  font-size: 32rpx;
+  transition: all 0.2s;
+}
+
+.send-btn::after {
+  border: none;
+}
+
+.send-btn.active {
+  background-color: #07c160;
+  color: #fff;
+}
+
+.send-btn[disabled] {
+  background-color: #e0e0e0 !important;
+  color: #999 !important;
+  opacity: 1;
+}
+
+/* 语音输入 */
+.voice-input {
+  margin-top: 16rpx;
+  display: none; /* 暂时隐藏 */
+}
+
+.record-btn {
+  width: 100%;
+  height: 80rpx;
+  border-radius: 40rpx;
+  background-color: #f5f5f5;
+  color: #666;
+  border: none;
+  padding: 0;
+  font-size: 32rpx;
+}
+
+.record-btn::after {
+  border: none;
+}
+
+/* 空状态 */
+.empty-state {
+  text-align: center;
+  padding: 100rpx 32rpx;
+}
+
+.empty-icon {
+  font-size: 120rpx;
+  margin-bottom: 32rpx;
+  opacity: 0.3;
+}
+
+.empty-text {
+  display: block;
+  font-size: 36rpx;
+  color: #666;
+  margin-bottom: 16rpx;
+}
+
+.empty-hint {
+  display: block;
+  font-size: 28rpx;
+  color: #999;
+  margin-bottom: 48rpx;
+}
+
+/* 快捷问题 */
+.quick-questions {
+  text-align: left;
+}
+
+.quick-title {
+  display: block;
+  font-size: 30rpx;
+  color: #666;
+  margin-bottom: 20rpx;
+  text-align: center;
+}
+
+.quick-question {
+  background-color: #fff;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+  border: 1rpx solid #e0e0e0;
+  font-size: 28rpx;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.quick-question:active {
+  background-color: #f5f5f5;
+  transform: scale(0.98);
+}
+
+/* 加载更多 */
+.load-more {
+  text-align: center;
+  padding: 32rpx;
+  color: #999;
+  font-size: 28rpx;
+}
+
+/* 响应式调整 */
+@media screen and (max-width: 360px) {
+  .message-bubble {
+    max-width: 80%;
+  }
+
+  .message-content {
+    font-size: 30rpx;
+  }
+}
+
+/* 快捷问题容器（始终显示） */
+.quick-questions-container {
+  background-color: #fff;
+  border-top: 1rpx solid #e0e0e0;
+  border-bottom: 1rpx solid #e0e0e0;
+  padding: 32rpx;
+  margin-top: 20rpx;
+}
+
+.quick-questions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.quick-question-item {
+  background-color: #f8f9fa;
+  border-radius: 16rpx;
+  padding: 20rpx 16rpx;
+  border: 1rpx solid #e0e0e0;
+  font-size: 26rpx;
+  color: #333;
+  text-align: center;
+  transition: all 0.2s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-question-item:active {
+  background-color: #e8f4ff;
+  transform: scale(0.98);
+  border-color: #1890ff;
+}

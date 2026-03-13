@@ -1,0 +1,10 @@
+{
+  "navigationBarTitleText": "听听·原声态",
+  "enablePullDownRefresh": true,
+  "backgroundColor": "#f8f9fa",
+  "backgroundTextStyle": "dark",
+  "usingComponents": {
+    "audio-player": "/components/audio-player/audio-player",
+    "loading": "/components/loading/loading"
+  }
+}

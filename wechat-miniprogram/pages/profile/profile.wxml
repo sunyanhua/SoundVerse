@@ -1,0 +1,66 @@
+<!-- 个人中心页面 -->
+<view class="profile-page">
+  <!-- 用户信息区域 -->
+  <view class="user-info" bindtap="onUserInfoTap">
+    <view class="avatar-section">
+      <image class="avatar" src="{{userInfo ? userInfo.avatarUrl : '/assets/icons/profile.png'}}" mode="aspectFill" />
+      <view class="avatar-badge" wx:if="{{ !userInfo }}">未登录</view>
+    </view>
+    <view class="user-details">
+      <text class="user-name">{{userInfo ? userInfo.nickName : '点击登录'}}</text>
+      <text class="user-desc">{{userInfo ? '欢迎回来！' : '登录后体验完整功能'}}</text>
+    </view>
+    <view class="user-arrow">›</view>
+  </view>
+
+  <!-- 数据统计 -->
+  <view class="stats-section" wx:if="{{ userInfo }}">
+    <view class="stats-grid">
+      <view class="stat-item">
+        <text class="stat-value">{{stats.chatCount}}</text>
+        <text class="stat-label">聊天次数</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-value">{{stats.generateCount}}</text>
+        <text class="stat-label">生成次数</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-value">{{stats.favoriteCount}}</text>
+        <text class="stat-label">收藏音频</text>
+      </view>
+      <view class="stat-item">
+        <text class="stat-value">{{stats.uploadCount}}</text>
+        <text class="stat-label">上传次数</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 功能菜单 -->
+  <view class="menu-section">
+    <view
+      class="menu-item"
+      wx:for="{{menuItems}}"
+      wx:key="index"
+      bindtap="onMenuItemTap"
+      data-index="{{index}}"
+    >
+      <view class="menu-icon">{{item.icon}}</view>
+      <view class="menu-content">
+        <text class="menu-title">{{item.title}}</text>
+        <text class="menu-subtitle">{{item.subTitle}}</text>
+      </view>
+      <view class="menu-arrow">›</view>
+    </view>
+  </view>
+
+  <!-- 退出登录 -->
+  <view class="logout-section" wx:if="{{ userInfo }}">
+    <button class="logout-btn" bindtap="logout">退出登录</button>
+  </view>
+
+  <!-- 版本信息 -->
+  <view class="version-section">
+    <text class="version-text">听听·原声态 v1.0.0</text>
+    <text class="copyright">© 2026 SoundVerse Team</text>
+  </view>
+</view>

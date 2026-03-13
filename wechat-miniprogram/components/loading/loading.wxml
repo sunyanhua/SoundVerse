@@ -1,0 +1,7 @@
+<!-- 加载组件 -->
+<view class="loading-container">
+  <view class="loading-spinner">
+    <view class="spinner-circle"></view>
+  </view>
+  <text class="loading-text">{{ text || '加载中...' }}</text>
+</view>

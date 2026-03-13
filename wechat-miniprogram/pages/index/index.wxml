@@ -1,0 +1,103 @@
+<!-- 首页 -->
+<view class="page-container">
+  <!-- 顶部横幅 -->
+  <view class="banner">
+    <image src="https://picsum.photos/750/300?random=1" mode="aspectFill" class="banner-image" />
+    <view class="banner-content">
+      <text class="banner-title">听听·原声态</text>
+      <text class="banner-subtitle">AI驱动的智能音频社交平台</text>
+    </view>
+  </view>
+
+  <!-- 快速入口 -->
+  <view class="quick-actions">
+    <view class="action-grid">
+      <view class="action-item" bindtap="goToChat">
+        <view class="action-icon chat-icon">💬</view>
+        <text class="action-text">智能聊天</text>
+      </view>
+      <view class="action-item" bindtap="goToGenerate">
+        <view class="action-icon generate-icon">🎵</view>
+        <text class="action-text">音频生成</text>
+      </view>
+      <view class="action-item" bindtap="goToUpload">
+        <view class="action-icon upload-icon">⬆️</view>
+        <text class="action-text">上传音频</text>
+      </view>
+      <view class="action-item" bindtap="goToProfile">
+        <view class="action-icon profile-icon">👤</view>
+        <text class="action-text">个人中心</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 推荐音频 -->
+  <view class="section">
+    <view class="section-header">
+      <text class="section-title">热门推荐</text>
+      <text class="section-more" bindtap="viewMoreRecommended">更多</text>
+    </view>
+
+    <scroll-view scroll-x="true" class="recommended-scroll">
+      <view class="recommended-list">
+        <block wx:for="{{recommendedAudios}}" wx:key="id">
+          <view class="recommended-item" bindtap="playAudio" data-audio="{{item}}">
+            <image src="{{item.coverUrl || 'https://picsum.photos/200/200?random=2'}}" class="audio-cover" />
+            <view class="audio-info">
+              <text class="audio-title">{{item.title}}</text>
+              <text class="audio-duration">{{item.duration}}秒</text>
+              <text class="audio-tags">
+                <block wx:for="{{item.tags}}" wx:key="index">
+                  <text class="tag">{{item}}</text>
+                </block>
+              </text>
+            </view>
+          </view>
+        </block>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- 功能说明 -->
+  <view class="section">
+    <view class="section-header">
+      <text class="section-title">功能介绍</text>
+    </view>
+
+    <view class="features">
+      <view class="feature-item">
+        <view class="feature-icon">🤖</view>
+        <view class="feature-content">
+          <text class="feature-title">AI智能聊天</text>
+          <text class="feature-desc">任何问题都能用匹配的广播音频回复，体验独特的对话方式</text>
+        </view>
+      </view>
+
+      <view class="feature-item">
+        <view class="feature-icon">🎨</view>
+        <view class="feature-content">
+          <text class="feature-title">个性化音频生成</text>
+          <text class="feature-desc">生成祝福、表白、道歉等定制音频，分享给朋友</text>
+        </view>
+      </view>
+
+      <view class="feature-item">
+        <view class="feature-icon">📁</view>
+        <view class="feature-content">
+          <text class="feature-title">声音库管理</text>
+          <text class="feature-desc">上传和管理自己的音频，建立个人声音库</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 加载状态 -->
+  <loading wx:if="{{isLoading}}" />
+
+  <!-- 空状态 -->
+  <view wx:if="{{ !isLoading && recommendedAudios.length === 0 }}" class="empty-state">
+    <view class="empty-icon">🎵</view>
+    <text class="empty-text">暂无推荐音频</text>
+    <button class="refresh-btn" bindtap="loadRecommendedAudios">刷新</button>
+  </view>
+</view>
