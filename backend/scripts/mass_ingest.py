@@ -320,6 +320,10 @@ async def process_audio_segments(
     try:
         logger.info(f"开始处理音频源片段: {source.id}")
 
+        # 进度实时对账：存储前10个片段的原始文本
+        first_10_transcriptions = []
+        transcription_check_counter = 0
+
         # 更新处理状态
         source.processing_status = "processing"
         source.processing_progress = 0.3
@@ -431,8 +435,38 @@ async def process_audio_segments(
                     )
 
                     if not transcription:
-                        logger.warning(f"ASR识别失败，使用备用文本")
-                        transcription = f"音频片段 {start_time:.1f}s-{end_time:.1f}s (识别失败)"
+                        logger.error(f"ASR识别失败，终止处理")
+                        raise RuntimeError(f"ASR识别失败，音频片段 {start_time:.1f}s-{end_time:.1f}s")
+
+                    # 进度实时对账：检查前10个片段的原始文本
+                    nonlocal first_10_transcriptions, transcription_check_counter
+                    if transcription_check_counter < 10:
+                        first_10_transcriptions.append(transcription)
+                        transcription_check_counter += 1
+
+                        logger.info(f"[进度对账] 片段 {segment_index+1} 原始文本: {transcription}")
+
+                        # 检查是否为示例文本
+                        simulated_texts = [
+                            "这是语音识别的示例文本",
+                            "示例文本",
+                            "模拟模式",
+                            "这是第一个音频片段的示例文本",
+                            "这是第二个音频片段的示例文本",
+                            "这是第三个音频片段的示例文本"
+                        ]
+
+                        for sim_text in simulated_texts:
+                            if sim_text in transcription:
+                                logger.error(f"[警报] 检测到模拟文本: '{sim_text}'")
+                                logger.error(f"[警报] 前10个片段文本: {first_10_transcriptions}")
+                                raise RuntimeError(f"检测到模拟文本: '{sim_text}'，ASR服务未使用真实API！")
+
+                        if transcription_check_counter == 10:
+                            logger.info(f"[进度对账] 前10个片段原始文本检查完成:")
+                            for i, text in enumerate(first_10_transcriptions):
+                                logger.info(f"  片段 {i+1}: {text[:100]}...")
+                            logger.info("[进度对账] 未检测到模拟文本，继续处理...")
 
                     # 文本去重
                     if transcription:
@@ -605,30 +639,47 @@ async def process_single_audio_file(
 
         # 3. 检查是否已处理
         existing_source = await check_existing_source(db, audio_file_path.name, file_hash)
+        source = None
+        source_already_exists = False
+
         if existing_source:
-            result["success"] = True
-            result["source_id"] = existing_source.id
-            result["segments_created"] = 0
-            result["segments_total"] = 0
-            result["message"] = "文件已处理，跳过"
-            return result
+            logger.info(f"文件 {audio_file_path.name} 已存在于数据库，将检查缺失片段并补全")
+            source = existing_source
+            source_already_exists = True
+            # 重置处理状态以便重新处理（如果之前失败）
+            if source.processing_status == "failed":
+                source.processing_status = "processing"
+                source.processing_progress = 0.0
+                source.error_message = None
+                await db.commit()
+                logger.info(f"重置失败状态为处理中")
+            elif source.processing_status == "completed":
+                logger.info(f"源状态为已完成，将继续检查缺失片段")
+        else:
+            logger.info(f"文件 {audio_file_path.name} 为新文件，将创建新源记录")
 
         if dry_run:
             result["success"] = True
+            result["source_id"] = source.id if source else None
+            result["segments_created"] = 0
+            result["segments_total"] = 0
             result["message"] = "Dry run模式，跳过实际处理"
             return result
 
-        # 4. 创建音频源记录
-        source = await create_audio_source(db, audio_file_path, file_hash)
+        # 4. 创建音频源记录（仅对新文件）
         if not source:
-            result["error"] = "创建音频源记录失败"
-            return result
+            source = await create_audio_source(db, audio_file_path, file_hash)
+            if not source:
+                result["error"] = "创建音频源记录失败"
+                return result
 
-        # 5. 上传音频源到OSS
-        upload_success = await upload_source_to_oss(db, source, audio_file_path)
-        if not upload_success:
-            result["error"] = "音频源上传失败"
-            return result
+            # 5. 上传音频源到OSS（仅对新文件）
+            upload_success = await upload_source_to_oss(db, source, audio_file_path)
+            if not upload_success:
+                result["error"] = "音频源上传失败"
+                return result
+        else:
+            logger.info(f"使用已存在的音频源: {source.id}")
 
         # 6. 转换音频为ASR优化格式
         converted_audio_path = None

@@ -209,8 +209,24 @@ class VectorSearchService:
                 # 处理结果
                 similar_segments = []
                 for doc in results:
-                    similarity = doc.score  # DashVector返回的是相似度分数
-                    logger.info(f"DashVector搜索结果: 片段ID={doc.id}, 原始分数={similarity:.4f}")
+                    raw_score = doc.score
+                    # 根据DashVector集合度量方式决定转换方式
+                    # 假设集合使用余弦相似度度量，但返回的是余弦距离 (1 - cosine)
+                    # 先检查raw_score范围以确定其含义
+                    if raw_score >= 0 and raw_score <= 2:
+                        # 可能是余弦距离 (0~2)，转换为余弦相似度 (-1~1)
+                        # 但通常余弦距离 = 1 - cosine，所以 cosine = 1 - raw_score
+                        similarity = 1.0 - raw_score
+                        score_type = "余弦距离"
+                    elif raw_score >= -1 and raw_score <= 1:
+                        # 可能是余弦相似度 (-1~1)
+                        similarity = raw_score
+                        score_type = "余弦相似度"
+                    else:
+                        # 其他情况，使用原始转换公式作为回退
+                        similarity = 1.0 / (1.0 + raw_score) if raw_score >= 0 else raw_score
+                        score_type = "原始分数"
+                    logger.info(f"DashVector搜索结果: 片段ID={doc.id}, 原始分数={raw_score:.4f} ({score_type}), 转换后相似度={similarity:.4f}")
                     if similarity >= similarity_threshold:
                         segment_id = doc.id
                         similar_segments.append((segment_id, similarity))

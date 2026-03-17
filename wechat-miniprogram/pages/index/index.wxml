@@ -100,4 +100,41 @@
     <text class="empty-text">暂无推荐音频</text>
     <button class="refresh-btn" bindtap="loadRecommendedAudios">刷新</button>
   </view>
+
+  <!-- 音频预览弹窗 -->
+  <view wx:if="{{showAudioPreview}}" class="audio-preview-modal">
+    <!-- 遮罩层 -->
+    <view class="preview-mask" bindtap="closeAudioPreview"></view>
+
+    <!-- 弹窗内容 -->
+    <view class="preview-content">
+      <!-- 标题栏 -->
+      <view class="preview-header">
+        <text class="preview-title">{{previewAudio.title || '音频预览'}}</text>
+        <button class="close-btn" bindtap="closeAudioPreview">×</button>
+      </view>
+
+      <!-- 音频播放器 -->
+      <audio-player
+        audioUrl="{{previewAudio.audioUrl}}"
+        title="{{previewAudio.title}}"
+        duration="{{previewAudio.duration}}"
+        customClass="preview-player"
+        autoplay="{{true}}"
+        bind:favorite="onAudioFavorite"
+        bind:share="onAudioShare"
+        bind:download="onAudioDownload"
+        bind:ended="onAudioEnded"
+        bind:error="onAudioError"
+      />
+
+      <!-- 附加信息 -->
+      <view wx:if="{{previewAudio.tags && previewAudio.tags.length > 0}}" class="preview-tags">
+        <text class="tags-label">标签：</text>
+        <block wx:for="{{previewAudio.tags}}" wx:key="index">
+          <text class="tag">{{item}}</text>
+        </block>
+      </view>
+    </view>
+  </view>
 </view>

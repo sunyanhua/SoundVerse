@@ -1,20 +1,57 @@
-import { Card, Row, Col, Statistic, Typography, Space } from 'antd'
+import { useState, useEffect } from 'react'
+import { Card, Row, Col, Statistic, Typography, Space, Spin } from 'antd'
 import {
   AudioOutlined,
   UserOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
 } from '@ant-design/icons'
+import { getAudioStats } from '../../services/audioService'
 
 const { Title, Paragraph } = Typography
 
+interface Stats {
+  totalAudio: number
+  approvedAudio: number
+  pendingAudio: number
+  totalUsers: number
+}
+
 const Dashboard = () => {
-  // 模拟数据
-  const stats = {
-    totalAudio: 2370,
-    approvedAudio: 2370,
+  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<Stats>({
+    totalAudio: 0,
+    approvedAudio: 0,
     pendingAudio: 0,
     totalUsers: 0,
+  })
+
+  useEffect(() => {
+    loadStats()
+  }, [])
+
+  const loadStats = async () => {
+    setLoading(true)
+    try {
+      const data = await getAudioStats()
+      setStats({
+        totalAudio: data.total || 0,
+        approvedAudio: data.approved || 0,
+        pendingAudio: data.pending || 0,
+        totalUsers: data.users || data.totalUsers || 0,
+      })
+    } catch (error) {
+      console.error('加载统计数据失败:', error)
+      // 使用默认值
+      setStats({
+        totalAudio: 0,
+        approvedAudio: 0,
+        pendingAudio: 0,
+        totalUsers: 0,
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -24,48 +61,50 @@ const Dashboard = () => {
         欢迎使用新声态管理后台，这里是音频百科全书的管理中心。
       </Paragraph>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="音频片段总数"
-              value={stats.totalAudio}
-              prefix={<AudioOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="已审核音频"
-              value={stats.approvedAudio}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#52c41a' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="待审核音频"
-              value={stats.pendingAudio}
-              prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: '#faad14' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <Card>
-            <Statistic
-              title="注册用户"
-              value={stats.totalUsers}
-              prefix={<UserOutlined />}
-              valueStyle={{ color: '#722ed1' }}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <Spin spinning={loading}>
+        <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="音频片段总数"
+                value={stats.totalAudio}
+                prefix={<AudioOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="已审核音频"
+                value={stats.approvedAudio}
+                prefix={<CheckCircleOutlined />}
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="待审核音频"
+                value={stats.pendingAudio}
+                prefix={<ClockCircleOutlined />}
+                valueStyle={{ color: '#faad14' }}
+              />
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} md={6}>
+            <Card>
+              <Statistic
+                title="注册用户"
+                value={stats.totalUsers}
+                prefix={<UserOutlined />}
+                valueStyle={{ color: '#722ed1' }}
+              />
+            </Card>
+          </Col>
+        </Row>
+      </Spin>
 
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         <Col xs={24} md={12}>

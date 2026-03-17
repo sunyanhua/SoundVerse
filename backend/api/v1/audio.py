@@ -27,13 +27,20 @@ from services.audio_service import (
     favorite_audio_segment,
     get_user_favorites,
     delete_audio_source,
+    get_recommended_audios as get_recommended_audios_service,
+    get_audio_segments_paginated,
+    get_audio_stats,
 )
-from .auth import get_current_active_user
+from .auth import get_current_active_user, get_current_user_optional
 from config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def optional_auth() -> Optional[User]:
+    return None
 
 
 @router.post("/upload", response_model=AudioUploadResponse)
@@ -128,14 +135,15 @@ async def search_audio(
 @router.get("/segment/{segment_id}", response_model=AudioSegmentResponse)
 async def get_segment_detail(
     segment_id: str,
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db),
 ) -> AudioSegmentResponse:
     """
     获取音频片段详情
     """
     try:
-        segment = await get_audio_segment(db, segment_id, current_user.id)
+        user_id = current_user.id if current_user else None
+        segment = await get_audio_segment(db, segment_id, user_id)
         return segment
     except ValueError as e:
         raise HTTPException(
@@ -247,16 +255,15 @@ async def delete_source(
 @router.get("/recommended", response_model=List[AudioSegmentResponse])
 async def get_recommended_audios(
     limit: int = 10,
-    current_user: Optional[User] = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(optional_auth),
     db: AsyncSession = Depends(get_db),
 ) -> List[AudioSegmentResponse]:
     """
     获取推荐音频片段
     """
     try:
-        # 这里应该实现推荐算法
-        # 暂时返回空列表
-        return []
+        user_id = current_user.id if current_user else None
+        return await get_recommended_audios_service(db, user_id, limit)
     except Exception as e:
         logger.error(f"获取推荐音频失败: {str(e)}")
         raise HTTPException(
@@ -282,4 +289,62 @@ async def record_play(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="记录播放失败",
+        )
+
+
+@router.get("/segments")
+async def get_audio_segments_list(
+    page: int = 1,
+    limit: int = 20,
+    query: Optional[str] = None,
+    review_status: Optional[str] = None,
+    source_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_order: Optional[str] = "desc",
+    current_user: Optional[User] = Depends(optional_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    获取音频片段列表（分页，用于管理界面）
+    注意：管理界面允许无身份验证访问，实际部署时应添加管理员验证
+    """
+    try:
+        result = await get_audio_segments_paginated(
+            db=db,
+            page=page,
+            limit=limit,
+            query=query,
+            review_status=review_status,
+            source_name=source_name,
+            start_date=start_date,
+            end_date=end_date,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"获取音频片段列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取音频片段列表失败",
+        )
+
+
+@router.get("/stats")
+async def get_stats(
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    获取音频统计数据（用于管理后台首页）
+    """
+    try:
+        stats = await get_audio_stats(db)
+        return stats
+    except Exception as e:
+        logger.error(f"获取统计数据失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取统计数据失败",
         )

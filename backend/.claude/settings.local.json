@@ -11,7 +11,8 @@
       "Bash(curl:*)",
       "Bash(docker-compose logs:*)",
       "Bash(docker-compose restart:*)",
-      "Bash(docker-compose exec:*)"
+      "Bash(docker-compose exec:*)",
+      "Bash(find:*)"
     ]
   }
 }

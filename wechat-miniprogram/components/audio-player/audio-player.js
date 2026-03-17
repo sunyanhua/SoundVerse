@@ -26,6 +26,42 @@ Component({
             type: String,
             value: '',
         },
+        // 是否自动播放
+        autoplay: {
+            type: Boolean,
+            value: false,
+        },
+    },
+    /**
+     * 属性监听器
+     */
+    observers: {
+        'audioUrl, autoplay': function (audioUrl, autoplay) {
+            // 当音频URL变化且自动播放开启时，尝试自动播放
+            if (audioUrl && autoplay) {
+                // 确保音频上下文已初始化
+                if (!this.data.audioContext) {
+                    this.initAudioContext();
+                }
+                const audioContext = this.data.audioContext;
+                if (!audioContext) {
+                    return;
+                }
+                // 如果音频源已相同且正在播放，则无需操作
+                if (audioContext.src === audioUrl && this.data.isPlaying) {
+                    return;
+                }
+                // 设置音频源
+                audioContext.src = audioUrl;
+                // 延迟播放以确保音频已加载
+                setTimeout(() => {
+                    audioContext.play().catch((err) => {
+                        console.error('自动播放失败:', err);
+                        // 自动播放失败时不显示错误，可能需用户交互
+                    });
+                }, 300);
+            }
+        },
     },
     /**
      * 组件的初始数据
@@ -41,6 +77,19 @@ Component({
         // 生命周期函数
         attached() {
             this.initAudioContext();
+
+            // 组件挂载后检查是否需要自动播放
+            if (this.properties.audioUrl && this.properties.autoplay && this.data.audioContext) {
+                // 延迟播放以确保音频已加载
+                setTimeout(() => {
+                    if (this.data.audioContext && !this.data.isPlaying) {
+                        this.data.audioContext.src = this.properties.audioUrl;
+                        this.data.audioContext.play().catch((err) => {
+                            console.error('组件挂载时自动播放失败:', err);
+                        });
+                    }
+                }, 300);
+            }
         },
         detached() {
             this.destroyAudioContext();

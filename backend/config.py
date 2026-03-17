@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7天
 
     # CORS 配置
-    CORS_ORIGINS: List[str] = ["*"]
+    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000", "http://localhost:8080"]
     ALLOWED_HOSTS: List[str] = ["*"]
 
     # 数据库配置
@@ -102,8 +102,8 @@ class Settings(BaseSettings):
     SIMILARITY_THRESHOLD: float = 0.25  # 进一步降低阈值，匹配0.2-0.4的相似度范围
 
     # 聊天回复配置
-    AUDIO_REPLY_THRESHOLD: float = 0.25  # 直接播放门槛，降低至0.25
-    AUDIO_SUGGEST_THRESHOLD: float = 0.15  # 引导播放门槛，新增
+    AUDIO_REPLY_THRESHOLD: float = 0.55  # 直接播放门槛，从0.25调整到0.55
+    AUDIO_SUGGEST_THRESHOLD: float = 0.35  # 引导播放门槛，从0.15调整到0.35
 
     # 缓存配置
     CACHE_TTL: int = 3600  # 1小时

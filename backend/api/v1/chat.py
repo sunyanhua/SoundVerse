@@ -5,8 +5,10 @@ import logging
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
+import tempfile
+import os
 
 from shared.database.session import get_db
 from shared.models.user import User
@@ -27,6 +29,7 @@ from services.chat_service import (
     delete_chat_session,
     generate_chat_suggestions,
 )
+from ai_models.asr_service import recognize_audio_file
 from .auth import get_current_active_user
 from config import settings
 
@@ -381,4 +384,85 @@ async def test_audio_match(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="测试音频匹配失败",
+        )
+
+
+@router.post("/voice")
+async def process_voice_message(
+    audio: UploadFile = File(...),
+    session_id: str = Form(None),
+    format: str = Form("mp3"),
+    sample_rate: int = Form(16000),
+    current_user: User = Depends(get_current_user_or_mock),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    处理语音消息：接收音频文件，进行ASR识别，然后处理为聊天消息
+    """
+    try:
+        # 检查文件大小（限制为5MB）
+        audio.file.seek(0, 2)  # 移动到文件末尾
+        file_size = audio.file.tell()
+        audio.file.seek(0)  # 重置文件指针
+        max_size = 5 * 1024 * 1024  # 5MB
+        if file_size > max_size:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"音频文件大小超过限制（{max_size / 1024 / 1024}MB）",
+            )
+
+        # 创建临时文件保存音频
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{format}") as tmp_file:
+            # 读取音频文件内容
+            content = await audio.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+
+        try:
+            # 调用ASR服务识别音频
+            text = await recognize_audio_file(
+                tmp_file_path,
+                language="zh-CN",
+                sample_rate=sample_rate,
+                format=format,
+            )
+
+            if not text:
+                return {
+                    "success": False,
+                    "message": "语音识别失败，未识别到有效语音",
+                }
+
+            # 使用识别出的文本调用现有的聊天消息处理逻辑
+            response = await process_chat_message(
+                db=db,
+                user=current_user,
+                message=text,
+                session_id=session_id,
+            )
+
+            # 更新用户聊天计数
+            current_user.increment_chat_count()
+            await db.commit()
+
+            return {
+                "success": True,
+                "text": text,
+                "chat_response": response.dict() if hasattr(response, 'dict') else response,
+            }
+
+        finally:
+            # 删除临时文件
+            try:
+                os.unlink(tmp_file_path)
+            except Exception as e:
+                logger.warning(f"删除临时文件失败: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"处理语音消息失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="处理语音消息失败",
         )

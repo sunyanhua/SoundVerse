@@ -2,6 +2,7 @@
 聊天服务
 """
 import logging
+import random
 import uuid
 from datetime import datetime
 from typing import List, Optional, Dict, Any
@@ -21,6 +22,12 @@ from services.audio_service import search_audio_segments
 from shared.schemas.audio import AudioSearchRequest, AudioSearchResponse
 from config import settings
 from ai_models.llm_service import generate_search_fallback_reply, llm_service
+from services.prompt_generation_service import generate_prompts_for_audio_segment
+from services.conversational_prompt_service import (
+    generate_conversational_suggestions_from_audio,
+    enrich_chat_suggestions_with_audio_context,
+    get_default_conversational_suggestions,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -274,10 +281,19 @@ async def process_chat_message(
             best_match = search_result.results[0]
             best_similarity = best_match.similarity_score
 
-            if best_similarity >= settings.AUDIO_REPLY_THRESHOLD:
+            # 找出所有达到音频回复门槛的候选音频
+            eligible_results = [
+                result for result in search_result.results
+                if result.similarity_score >= settings.AUDIO_REPLY_THRESHOLD
+            ]
+
+            if eligible_results:
+                # 随机选择一个达到门槛的音频片段
+                selected_result = random.choice(eligible_results)
                 has_audio_match = True
-                audio_segment = best_match.segment
-                logger.info(f"找到匹配音频片段，相似度 {best_similarity:.4f} ≥ 门槛值 {settings.AUDIO_REPLY_THRESHOLD}")
+                audio_segment = selected_result.segment
+                best_similarity = selected_result.similarity_score  # 使用选中片段的相似度
+                logger.info(f"找到 {len(eligible_results)} 个匹配音频片段（相似度≥{settings.AUDIO_REPLY_THRESHOLD}），随机选择片段ID={audio_segment.id}，相似度 {best_similarity:.4f}")
 
         if has_audio_match:
             # 创建助手消息（带音频）
@@ -285,7 +301,7 @@ async def process_chat_message(
                 session_id=session.id,
                 audio_segment_id=audio_segment.id,
                 role="assistant",
-                content=audio_segment.transcription or "找到匹配的音频片段",
+                content="",  # 不显示转录文字
                 audio_url=_fix_audio_url_for_dev(audio_segment.oss_url),
                 query_vector=None,  # 实际应保存查询向量
                 similarity_score=best_similarity,
@@ -327,15 +343,20 @@ async def process_chat_message(
             **assistant_message.__dict__,
             audio_segment_preview={
                 "id": audio_segment.id if audio_segment else None,
-                "title": (audio_segment.transcription[:50] if audio_segment.transcription else "音频片段") if audio_segment else None,
-                "duration": audio_segment.duration if audio_segment else None,
+                "title": "广播音频片段",  # 固定标题，不显示转录文字
+                "duration": None,  # 不显示时长
+                "source_title": audio_segment.source_title if audio_segment else None,
             } if audio_segment else None,
         )
+
+        # 生成建议：根据用户要求，只在页面加载时通过独立API获取建议
+        # 聊天响应中不返回建议，避免每次聊天都刷新提示语句
+        suggestions = []
 
         return ChatResponse(
             message=assistant_response,
             session=session_response if session_id is None else None,  # 新会话时返回会话信息
-            suggestions=await generate_chat_suggestions(db, user.id),
+            suggestions=suggestions,  # 返回空列表，提示语句只通过独立API获取
         )
 
     except Exception as e:
@@ -585,14 +606,22 @@ async def generate_chat_suggestions(
     user_id: str,
 ) -> List[str]:
     """
-    生成聊天建议
-    基于用户最近的聊天历史生成相关建议
+    生成聊天建议（基于音频内容的对话式建议）
+    优先从音频内容生成自然的口语化聊天语句
     """
     from sqlalchemy import select, desc
     from shared.models.chat import ChatMessage, ChatSession
 
     try:
-        # 获取用户最近的聊天消息（最多10条）
+        # 1. 首先从音频内容生成对话式建议
+        audio_suggestions = await generate_conversational_suggestions_from_audio(
+            db,
+            suggestion_count=100  # 生成100个基于音频的建议
+        )
+
+        logger.info(f"从音频内容生成 {len(audio_suggestions)} 个对话式建议")
+
+        # 2. 获取用户最近的聊天消息（最多10条）用于主题分析
         stmt = (
             select(ChatMessage.content)
             .join(ChatSession, ChatSession.id == ChatMessage.session_id)
@@ -607,47 +636,221 @@ async def generate_chat_suggestions(
         result = await db.execute(stmt)
         recent_messages = result.scalars().all()
 
-        # 如果没有历史消息，返回默认建议
-        if not recent_messages:
-            return _get_default_suggestions()
+        # 3. 如果有历史消息，分析主题并获取相关建议
+        if recent_messages:
+            topics = _extract_topics_from_messages(recent_messages)
+            topic_suggestions = _generate_suggestions_by_topics(topics)
+            # 合并音频建议和主题建议
+            all_suggestions = list(set(audio_suggestions + topic_suggestions))
+            logger.info(f"结合用户历史主题，合并后建议数: {len(all_suggestions)}")
+        else:
+            all_suggestions = audio_suggestions
 
-        # 分析最近消息的主题
-        topics = _extract_topics_from_messages(recent_messages)
+        # 4. 如果建议数量不足，用默认对话建议补充
+        if len(all_suggestions) < 80:
+            default_suggestions = get_default_conversational_suggestions()
+            # 合并，确保不重复
+            for suggestion in default_suggestions:
+                if suggestion not in all_suggestions:
+                    all_suggestions.append(suggestion)
+                if len(all_suggestions) >= 120:
+                    break
+            logger.info(f"用默认建议补充后，建议数: {len(all_suggestions)}")
 
-        # 基于主题生成相关建议
-        suggestions = _generate_suggestions_by_topics(topics)
+        # 5. 随机打乱建议列表
+        random.shuffle(all_suggestions)
 
-        # 如果生成的建议不足，用默认建议补充
-        if len(suggestions) < 6:
-            default_suggestions = _get_default_suggestions()
-            # 合并并去重
-            all_suggestions = list(set(suggestions + default_suggestions))
-            # 保持建议数量在6-12条之间
-            return all_suggestions[:12]
-
-        return suggestions[:12]  # 最多返回12条建议
+        # 6. 返回足够多的建议（最多150条），让前端随机选择
+        return all_suggestions[:150]
 
     except Exception as e:
         logger.error(f"生成聊天建议失败: {str(e)}")
-        # 失败时返回默认建议
-        return _get_default_suggestions()
+        # 失败时返回默认对话建议
+        return get_default_conversational_suggestions()
 
 
 def _get_default_suggestions() -> List[str]:
-    """返回默认建议列表"""
+    """返回默认建议列表（扩展版，约150个自然问句）"""
     return [
+        # 时间相关（15个）
         "现在几点了？",
-        "北京时间是多少？",
-        "中央人民广播电台",
-        "有什么新闻广播吗？",
-        "请报时",
-        "天气预报",
-        "体育新闻",
-        "今天有什么新闻？",
-        "欢迎收听新闻广播",
-        "国家领导人会议",
-        "中国女排",
-        "天气预报今天怎么样？",
+        "请问现在是什么时间？",
+        "北京时间现在几点了？",
+        "能告诉我当前时间吗？",
+        "现在是什么时辰了？",
+        "您知道现在几点钟了吗？",
+        "请问现在准确时间是？",
+        "现在时间是多少？",
+        "我想知道现在几点了",
+        "麻烦您报一下时间",
+        "请问现在时刻是？",
+        "能报时一下吗？",
+        "现在钟点是多少？",
+        "请问北京时间？",
+        "现在具体是什么时间了？",
+
+        # 新闻相关（20个）
+        "今天有什么重要新闻？",
+        "最近有什么热点新闻吗？",
+        "国际上有哪些重要事件？",
+        "国内新闻有哪些值得关注的？",
+        "经济新闻有什么最新动态？",
+        "社会新闻有什么新进展？",
+        "政治新闻有哪些要点？",
+        "科技新闻有什么突破？",
+        "娱乐新闻有哪些新鲜事？",
+        "体育新闻有什么亮点？",
+        "今天头条新闻是什么？",
+        "最近国际局势怎么样？",
+        "国内政策有什么新变化？",
+        "财经市场有什么动向？",
+        "今天有什么突发新闻吗？",
+        "最近有哪些热点话题？",
+        "新闻联播有什么重要内容？",
+        "广播里有什么新闻节目？",
+        "晚间新闻主要报道什么？",
+        "早间新闻有哪些内容？",
+
+        # 天气相关（15个）
+        "今天天气怎么样？",
+        "明天会下雨吗？",
+        "最近气温变化大吗？",
+        "周末天气适合出行吗？",
+        "空气质量怎么样？",
+        "今天温度多少度？",
+        "明天天气如何？",
+        "最近会降温吗？",
+        "今天适合户外活动吗？",
+        "天气预报说今天怎么样？",
+        "今天有风吗？",
+        "明天需要带伞吗？",
+        "最近天气趋势如何？",
+        "今天湿度大吗？",
+        "天气对出行有什么影响？",
+
+        # 体育相关（15个）
+        "最近有什么体育赛事？",
+        "中国女排最近比赛怎么样？",
+        "足球联赛有什么最新消息？",
+        "篮球比赛有什么看点？",
+        "奥运会有哪些项目值得期待？",
+        "体育新闻有什么动态？",
+        "最近有重要比赛吗？",
+        "国家队表现如何？",
+        "体育赛事直播有哪些？",
+        "运动员有什么新成就？",
+        "体育政策有什么变化？",
+        "健身运动有什么建议？",
+        "体育产业有什么发展？",
+        "体育节目有哪些推荐？",
+        "运动健康有什么提示？",
+
+        # 生活相关（20个）
+        "今天有什么值得关注的事情？",
+        "最近流行什么话题？",
+        "有什么有趣的故事吗？",
+        "能分享一些生活小常识吗？",
+        "如何保持健康的生活方式？",
+        "生活中有哪些小技巧？",
+        "日常消费有什么建议？",
+        "家庭生活有什么经验分享？",
+        "节假日有什么安排建议？",
+        "生活品质如何提升？",
+        "日常安全有哪些注意事项？",
+        "生活中如何节约时间？",
+        "生活节奏怎么调节？",
+        "日常生活有什么窍门？",
+        "生活压力如何缓解？",
+        "生活乐趣从哪里寻找？",
+        "生活质量如何改善？",
+        "生活方式有哪些选择？",
+        "生活态度怎么调整？",
+        "生活目标如何设定？",
+
+        # 交通出行（15个）
+        "交通状况怎么样？",
+        "出行有什么需要注意的？",
+        "公共交通有什么最新消息？",
+        "自驾出行要注意什么？",
+        "旅游景点有什么推荐？",
+        "路上堵车吗？",
+        "交通政策有什么变化？",
+        "出行安全有什么提示？",
+        "旅游攻略有哪些？",
+        "交通工具有什么选择？",
+        "出行方式怎么规划？",
+        "旅行目的地推荐哪里？",
+        "交通信息如何获取？",
+        "出行费用怎么节省？",
+        "旅行注意事项有哪些？",
+
+        # 娱乐文化（15个）
+        "最近有什么好看的电影？",
+        "音乐方面有什么推荐？",
+        "文化节庆有哪些活动？",
+        "艺术展览有什么值得看的？",
+        "传统文化有哪些有趣的内容？",
+        "娱乐节目有哪些好看？",
+        "文化活动有什么参与方式？",
+        "文化艺术如何欣赏？",
+        "娱乐产业有什么动态？",
+        "文化传承有什么意义？",
+        "娱乐休闲怎么安排？",
+        "文化差异如何理解？",
+        "娱乐方式有哪些选择？",
+        "文化体验怎么获得？",
+        "娱乐活动有什么推荐？",
+
+        # 教育科技（15个）
+        "教育方面有什么新政策？",
+        "科技发展有什么最新突破？",
+        "人工智能有哪些新应用？",
+        "学习方法有什么建议？",
+        "数字生活有什么小技巧？",
+        "教育趋势有什么变化？",
+        "科技创新有什么成果？",
+        "学习资源怎么获取？",
+        "科技产品如何选择？",
+        "教育质量怎么提升？",
+        "科技影响有哪些方面？",
+        "学习效率如何提高？",
+        "科技应用有什么场景？",
+        "教育方式有哪些创新？",
+        "科技前沿有什么动态？",
+
+        # 财经投资（15个）
+        "股市最近行情怎么样？",
+        "投资理财有什么建议？",
+        "经济形势如何分析？",
+        "消费趋势有什么变化？",
+        "理财规划要注意什么？",
+        "金融市场有什么动向？",
+        "投资风险怎么控制？",
+        "经济政策有什么影响？",
+        "理财方式有哪些选择？",
+        "经济指标如何解读？",
+        "投资策略怎么制定？",
+        "消费行为有什么变化？",
+        "财经新闻有什么要点？",
+        "理财目标如何实现？",
+        "经济前景怎么看？",
+
+        # 健康养生（15个）
+        "如何保持身体健康？",
+        "饮食养生有什么建议？",
+        "运动锻炼要注意什么？",
+        "心理健康如何维护？",
+        "常见疾病如何预防？",
+        "健康管理怎么做？",
+        "养生方法有哪些？",
+        "运动方式怎么选择？",
+        "心理压力如何缓解？",
+        "健康饮食怎么安排？",
+        "养生保健有什么窍门？",
+        "运动效果怎么提升？",
+        "心理状态如何调整？",
+        "健康检查有什么项目？",
+        "养生理念有哪些？",
     ]
 
 
@@ -655,28 +858,119 @@ def _extract_topics_from_messages(messages: List[str]) -> List[str]:
     """从消息中提取主题"""
     topics = []
 
-    # 关键词到主题的映射
+    # 关键词到主题的映射（扩展版）
     keyword_to_topic = {
+        # 天气相关
         "天气": "天气",
         "气候": "天气",
         "温度": "天气",
         "下雨": "天气",
         "晴天": "天气",
+        "刮风": "天气",
+        "湿度": "天气",
+        "空气质量": "天气",
+        "预报": "天气",
+        # 新闻相关
         "新闻": "新闻",
         "广播": "新闻",
         "电台": "新闻",
         "时事": "新闻",
+        "头条": "新闻",
+        "报道": "新闻",
+        "事件": "新闻",
+        "热点": "新闻",
+        "动态": "新闻",
+        # 体育相关
         "体育": "体育",
         "运动": "体育",
         "比赛": "体育",
+        "赛事": "体育",
+        "运动员": "体育",
+        "健身": "体育",
+        "锻炼": "体育",
+        "奥运": "体育",
+        "球队": "体育",
+        # 时间相关
         "时间": "时间",
         "几点": "时间",
         "钟表": "时间",
         "报时": "时间",
+        "时刻": "时间",
+        "钟点": "时间",
+        "时辰": "时间",
+        "现在": "时间",
+        # 音乐相关
         "音乐": "音乐",
         "歌曲": "音乐",
         "唱歌": "音乐",
         "旋律": "音乐",
+        "歌词": "音乐",
+        "歌手": "音乐",
+        "演唱会": "音乐",
+        "专辑": "音乐",
+        # 生活相关
+        "生活": "生活",
+        "日常": "生活",
+        "家庭": "生活",
+        "家居": "生活",
+        "消费": "生活",
+        "品质": "生活",
+        "方式": "生活",
+        "习惯": "生活",
+        # 交通相关
+        "交通": "交通",
+        "出行": "交通",
+        "堵车": "交通",
+        "地铁": "交通",
+        "公交": "交通",
+        "自驾": "交通",
+        "旅行": "交通",
+        "旅游": "交通",
+        # 娱乐相关
+        "娱乐": "娱乐",
+        "电影": "娱乐",
+        "电视": "娱乐",
+        "综艺": "娱乐",
+        "节目": "娱乐",
+        "演出": "娱乐",
+        "艺术": "娱乐",
+        "文化": "娱乐",
+        # 教育相关
+        "教育": "教育",
+        "学习": "教育",
+        "学校": "教育",
+        "课程": "教育",
+        "教师": "教育",
+        "学生": "教育",
+        "知识": "教育",
+        "培训": "教育",
+        # 科技相关
+        "科技": "科技",
+        "技术": "科技",
+        "科学": "科技",
+        "创新": "科技",
+        "智能": "科技",
+        "数字": "科技",
+        "网络": "科技",
+        "互联网": "科技",
+        # 财经相关
+        "财经": "财经",
+        "经济": "财经",
+        "金融": "财经",
+        "股票": "财经",
+        "投资": "财经",
+        "理财": "财经",
+        "消费": "财经",
+        "市场": "财经",
+        # 健康相关
+        "健康": "健康",
+        "养生": "健康",
+        "饮食": "健康",
+        "锻炼": "健康",
+        "心理": "健康",
+        "疾病": "健康",
+        "医疗": "健康",
+        "保健": "健康",
     }
 
     for message in messages:
@@ -693,43 +987,195 @@ def _extract_topics_from_messages(messages: List[str]) -> List[str]:
 
 
 def _generate_suggestions_by_topics(topics: List[str]) -> List[str]:
-    """基于主题生成相关建议"""
-    # 主题到建议的映射
+    """基于主题生成相关建议（扩展版，每个主题15个建议）"""
+    # 主题到建议的映射（扩展版，包含所有主题）
     topic_to_suggestions = {
         "天气": [
             "今天天气怎么样？",
-            "天气预报",
             "明天会下雨吗？",
-            "最近气温如何？",
-            "适合出门吗？",
+            "最近气温变化大吗？",
+            "空气质量怎么样？",
+            "周末天气适合出行吗？",
+            "今天温度多少度？",
+            "明天天气如何？",
+            "最近会降温吗？",
+            "今天适合户外活动吗？",
+            "天气预报说今天怎么样？",
+            "今天有风吗？",
+            "明天需要带伞吗？",
+            "最近天气趋势如何？",
+            "今天湿度大吗？",
+            "天气对出行有什么影响？",
         ],
         "新闻": [
-            "有什么新闻广播吗？",
-            "今天有什么新闻？",
-            "最新新闻",
-            "国内新闻",
-            "国际新闻",
+            "今天有什么重要新闻？",
+            "最近有什么热点新闻吗？",
+            "国际上有哪些重要事件？",
+            "国内新闻有哪些值得关注的？",
+            "经济新闻有什么最新动态？",
+            "社会新闻有什么新进展？",
+            "政治新闻有哪些要点？",
+            "科技新闻有什么突破？",
+            "娱乐新闻有哪些新鲜事？",
+            "体育新闻有什么亮点？",
+            "今天头条新闻是什么？",
+            "最近国际局势怎么样？",
+            "国内政策有什么新变化？",
+            "财经市场有什么动向？",
+            "今天有什么突发新闻吗？",
         ],
         "体育": [
-            "体育新闻",
-            "最近有什么比赛？",
-            "中国女排",
-            "足球比赛",
-            "篮球新闻",
+            "最近有什么体育赛事？",
+            "中国女排最近比赛怎么样？",
+            "足球联赛有什么最新消息？",
+            "篮球比赛有什么看点？",
+            "奥运会有哪些项目值得期待？",
+            "体育新闻有什么动态？",
+            "最近有重要比赛吗？",
+            "国家队表现如何？",
+            "体育赛事直播有哪些？",
+            "运动员有什么新成就？",
+            "体育政策有什么变化？",
+            "健身运动有什么建议？",
+            "体育产业有什么发展？",
+            "体育节目有哪些推荐？",
+            "运动健康有什么提示？",
         ],
         "时间": [
             "现在几点了？",
-            "北京时间是多少？",
-            "请报时",
-            "准确时间",
-            "当前时间",
+            "请问现在是什么时间？",
+            "北京时间现在几点了？",
+            "能告诉我当前时间吗？",
+            "现在是什么时辰了？",
+            "您知道现在几点钟了吗？",
+            "请问现在准确时间是？",
+            "现在时间是多少？",
+            "我想知道现在几点了",
+            "麻烦您报一下时间",
+            "请问现在时刻是？",
+            "能报时一下吗？",
+            "现在钟点是多少？",
+            "请问北京时间？",
+            "现在具体是什么时间了？",
         ],
         "音乐": [
-            "有什么好听的音乐？",
-            "推荐一首歌",
-            "广播音乐",
-            "经典老歌",
-            "流行歌曲",
+            "有什么好听的音乐推荐吗？",
+            "最近流行什么歌曲？",
+            "经典老歌有哪些值得回味？",
+            "音乐节有什么活动？",
+            "音乐创作有什么新趋势？",
+            "音乐方面有什么推荐？",
+            "音乐节目有哪些？",
+            "音乐风格有哪些变化？",
+            "音乐教育有什么建议？",
+            "音乐产业有什么动态？",
+            "音乐欣赏怎么入门？",
+            "音乐创作需要什么条件？",
+            "音乐表演有什么技巧？",
+            "音乐历史有什么故事？",
+            "音乐治疗有什么效果？",
+        ],
+        "生活": [
+            "今天有什么值得关注的事情？",
+            "最近流行什么话题？",
+            "有什么有趣的故事吗？",
+            "能分享一些生活小常识吗？",
+            "如何保持健康的生活方式？",
+            "生活中有哪些小技巧？",
+            "日常消费有什么建议？",
+            "家庭生活有什么经验分享？",
+            "节假日有什么安排建议？",
+            "生活品质如何提升？",
+            "日常安全有哪些注意事项？",
+            "生活中如何节约时间？",
+            "生活节奏怎么调节？",
+            "日常生活有什么窍门？",
+            "生活压力如何缓解？",
+        ],
+        "交通": [
+            "交通状况怎么样？",
+            "出行有什么需要注意的？",
+            "公共交通有什么最新消息？",
+            "自驾出行要注意什么？",
+            "旅游景点有什么推荐？",
+            "路上堵车吗？",
+            "交通政策有什么变化？",
+            "出行安全有什么提示？",
+            "旅游攻略有哪些？",
+            "交通工具有什么选择？",
+            "出行方式怎么规划？",
+            "旅行目的地推荐哪里？",
+            "交通信息如何获取？",
+            "出行费用怎么节省？",
+            "旅行注意事项有哪些？",
+        ],
+        "娱乐": [
+            "最近有什么好看的电影？",
+            "音乐方面有什么推荐？",
+            "文化节庆有哪些活动？",
+            "艺术展览有什么值得看的？",
+            "传统文化有哪些有趣的内容？",
+            "娱乐节目有哪些好看？",
+            "文化活动有什么参与方式？",
+            "文化艺术如何欣赏？",
+            "娱乐产业有什么动态？",
+            "文化传承有什么意义？",
+            "娱乐休闲怎么安排？",
+            "文化差异如何理解？",
+            "娱乐方式有哪些选择？",
+            "文化体验怎么获得？",
+            "娱乐活动有什么推荐？",
+        ],
+        "教育": [
+            "教育方面有什么新政策？",
+            "科技发展有什么最新突破？",
+            "人工智能有哪些新应用？",
+            "学习方法有什么建议？",
+            "数字生活有什么小技巧？",
+            "教育趋势有什么变化？",
+            "科技创新有什么成果？",
+            "学习资源怎么获取？",
+            "科技产品如何选择？",
+            "教育质量怎么提升？",
+            "科技影响有哪些方面？",
+            "学习效率如何提高？",
+            "科技应用有什么场景？",
+            "教育方式有哪些创新？",
+            "科技前沿有什么动态？",
+        ],
+        "财经": [
+            "股市最近行情怎么样？",
+            "投资理财有什么建议？",
+            "经济形势如何分析？",
+            "消费趋势有什么变化？",
+            "理财规划要注意什么？",
+            "金融市场有什么动向？",
+            "投资风险怎么控制？",
+            "经济政策有什么影响？",
+            "理财方式有哪些选择？",
+            "经济指标如何解读？",
+            "投资策略怎么制定？",
+            "消费行为有什么变化？",
+            "财经新闻有什么要点？",
+            "理财目标如何实现？",
+            "经济前景怎么看？",
+        ],
+        "健康": [
+            "如何保持身体健康？",
+            "饮食养生有什么建议？",
+            "运动锻炼要注意什么？",
+            "心理健康如何维护？",
+            "常见疾病如何预防？",
+            "健康管理怎么做？",
+            "养生方法有哪些？",
+            "运动方式怎么选择？",
+            "心理压力如何缓解？",
+            "健康饮食怎么安排？",
+            "养生保健有什么窍门？",
+            "运动效果怎么提升？",
+            "心理状态如何调整？",
+            "健康检查有什么项目？",
+            "养生理念有哪些？",
         ],
     }
 

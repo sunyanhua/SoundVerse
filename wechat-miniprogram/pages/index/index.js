@@ -7,6 +7,13 @@ Page({
         isLoading: true,
         recommendedAudios: [],
         userInfo: null,
+        showAudioPreview: false,
+        previewAudio: {
+            title: '',
+            audioUrl: '',
+            duration: 0,
+            tags: [],
+        },
     },
     /**
      * 生命周期函数--监听页面加载
@@ -70,8 +77,55 @@ Page({
     async loadRecommendedAudios(callback) {
         this.setData({ isLoading: true });
         try {
-            // 这里应该调用API获取推荐音频
-            // 暂时使用模拟数据
+            // 调用真实API获取推荐音频
+            const response = await new Promise((resolve, reject) => {
+                wx.request({
+                    url: 'http://localhost:8000/api/v1/audio/recommended',
+                    method: 'GET',
+                    data: {
+                        limit: 10,
+                    },
+                    header: {
+                        'Content-Type': 'application/json',
+                    },
+                    success: (res) => {
+                        if (res.statusCode === 200) {
+                            resolve(res.data);
+                        } else {
+                            reject(new Error(`API请求失败: ${res.statusCode}`));
+                        }
+                    },
+                    fail: (err) => {
+                        reject(err);
+                    },
+                });
+            });
+
+            // 映射API响应到前端格式
+            const audios = response.map((item) => ({
+                id: item.id,
+                title: item.transcription ?
+                    (item.transcription.length > 20 ? item.transcription.substring(0, 20) + '...' : item.transcription)
+                    : '音频片段',
+                duration: Math.round(item.duration || 0),
+                tags: item.tags && item.tags.length > 0 ? item.tags.slice(0, 3) : ['音频'],
+                coverUrl: 'https://picsum.photos/200/200?random=' + Math.floor(Math.random() * 100),
+                audioUrl: item.oss_url || '',
+            }));
+
+            this.setData({
+                recommendedAudios: audios,
+                isLoading: false,
+            });
+
+            if (callback) callback();
+        } catch (error) {
+            console.error('加载推荐音频失败:', error);
+            wx.showToast({
+                title: '加载失败',
+                icon: 'none',
+            });
+            // 失败时使用模拟数据作为降级方案
             const mockAudios = [
                 {
                     id: '1',
@@ -98,22 +152,13 @@ Page({
                     audioUrl: 'https://example.com/audio3.mp3',
                 },
             ];
+
             this.setData({
                 recommendedAudios: mockAudios,
                 isLoading: false,
             });
-            if (callback)
-                callback();
-        }
-        catch (error) {
-            console.error('加载推荐音频失败:', error);
-            wx.showToast({
-                title: '加载失败',
-                icon: 'none',
-            });
-            this.setData({ isLoading: false });
-            if (callback)
-                callback();
+
+            if (callback) callback();
         }
     },
     /**
@@ -134,7 +179,7 @@ Page({
      * 跳转到聊天页面
      */
     goToChat() {
-        wx.navigateTo({
+        wx.switchTab({
             url: '/pages/chat/chat',
         });
     },
@@ -142,7 +187,7 @@ Page({
      * 跳转到音频生成页面
      */
     goToGenerate() {
-        wx.navigateTo({
+        wx.switchTab({
             url: '/pages/generate/generate',
         });
     },
@@ -158,7 +203,7 @@ Page({
      * 跳转到个人中心
      */
     goToProfile() {
-        wx.navigateTo({
+        wx.switchTab({
             url: '/pages/profile/profile',
         });
     },
@@ -171,20 +216,77 @@ Page({
         });
     },
     /**
-     * 播放音频
+     * 播放音频 - 打开预览弹窗
      */
     playAudio(e) {
         const audio = e.currentTarget.dataset.audio;
-        // 这里应该实现音频播放逻辑
+        this.setData({
+            previewAudio: {
+                title: audio.title,
+                audioUrl: audio.audioUrl,
+                duration: audio.duration || 0,
+                tags: audio.tags || [],
+            },
+            showAudioPreview: true,
+        });
+    },
+
+    /**
+     * 关闭音频预览弹窗
+     */
+    closeAudioPreview() {
+        this.setData({
+            showAudioPreview: false,
+        });
+    },
+
+    /**
+     * 音频收藏事件处理
+     */
+    onAudioFavorite(e) {
+        const { isFavorite } = e.detail;
         wx.showToast({
-            title: `播放: ${audio.title}`,
+            title: isFavorite ? '已收藏' : '取消收藏',
+            icon: 'success',
+        });
+    },
+
+    /**
+     * 音频分享事件处理
+     */
+    onAudioShare() {
+        wx.showToast({
+            title: '分享功能开发中',
             icon: 'none',
         });
-        // 可以调用全局音频播放器
-        const app = getApp();
-        if (app.globalData.audioPlayer) {
-            // 播放音频
-        }
+    },
+
+    /**
+     * 音频下载事件处理
+     */
+    onAudioDownload() {
+        wx.showToast({
+            title: '下载功能开发中',
+            icon: 'none',
+        });
+    },
+
+    /**
+     * 音频播放结束事件处理
+     */
+    onAudioEnded() {
+        console.log('音频播放结束');
+    },
+
+    /**
+     * 音频播放错误事件处理
+     */
+    onAudioError(e) {
+        console.error('音频播放错误:', e.detail);
+        wx.showToast({
+            title: '播放失败，请重试',
+            icon: 'none',
+        });
     },
     /**
      * 登录/注册

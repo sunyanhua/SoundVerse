@@ -159,23 +159,55 @@
   margin-top: 12rpx;
   font-size: 26rpx;
   color: #666;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16rpx;
 }
 
-.audio-duration {
-  background-color: #e8f4ff;
-  color: #1890ff;
-  padding: 4rpx 12rpx;
-  border-radius: 8rpx;
+.audio-source-line,
+.similarity-score-line {
+  margin-bottom: 4rpx;
+  display: flex;
+  align-items: center;
+}
+
+.audio-source-label,
+.similarity-score-label {
+  color: #999;
+  margin-right: 8rpx;
+  flex-shrink: 0;
+}
+
+.audio-source-value {
+  color: #fa8c16;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.similarity-score-value {
+  color: #52c41a;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 旧的样式保持兼容，但可能不再使用 */
+.audio-duration,
+.audio-source,
+.similarity-score {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.audio-source {
+  color: #fa8c16;
+  font-weight: 500;
 }
 
 .similarity-score {
-  background-color: #f0f9eb;
   color: #52c41a;
-  padding: 4rpx 12rpx;
-  border-radius: 8rpx;
+  font-weight: 500;
 }
 
 /* 输入容器 */
@@ -240,7 +272,7 @@
 /* 语音输入 */
 .voice-input {
   margin-top: 16rpx;
-  display: none; /* 暂时隐藏 */
+  display: block; /* 启用语音输入 */
 }
 
 .record-btn {
@@ -252,10 +284,21 @@
   border: none;
   padding: 0;
   font-size: 32rpx;
+  transition: all 0.2s;
 }
 
 .record-btn::after {
   border: none;
+}
+
+.record-btn.recording {
+  background-color: #ff6b6b;
+  color: #fff;
+}
+
+.record-btn[disabled] {
+  opacity: 0.5;
+  background-color: #e0e0e0;
 }
 
 /* 空状态 */
@@ -341,11 +384,28 @@
   margin-top: 20rpx;
 }
 
-.quick-questions-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+/* 空状态下的快捷问题容器 */
+.empty-state .quick-questions-container {
+  background-color: transparent;
+  border-top: none;
+  border-bottom: none;
+  padding: 0;
+  margin-top: 0;
+}
+
+/* 空状态下的快捷问题滚动容器 */
+.empty-state .quick-questions-scroll {
+  margin-top: 20rpx;
+}
+
+.quick-questions-scroll {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   gap: 16rpx;
   margin-top: 20rpx;
+  padding-bottom: 8rpx;
+  -webkit-overflow-scrolling: touch;
 }
 
 .quick-question-item {
@@ -360,10 +420,71 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 0 0 auto;
+  min-width: 180rpx;
 }
 
 .quick-question-item:active {
   background-color: #e8f4ff;
   transform: scale(0.98);
   border-color: #1890ff;
+}
+
+/* PC端满屏展示样式 */
+@media (min-width: 768px) {
+  /* 页面容器调整 */
+  .page-container {
+    max-width: 1200rpx;
+    margin: 0 auto;
+  }
+
+  /* 消息气泡增加最大宽度 */
+  .message-bubble {
+    max-width: 60%;
+  }
+
+  /* 消息内容字体调整 */
+  .message-content {
+    font-size: 36rpx;
+  }
+
+  /* 输入容器调整 */
+  .input-container {
+    padding: 32rpx 40rpx;
+  }
+
+  /* 消息输入框调整 */
+  .message-input {
+    font-size: 36rpx;
+    height: 96rpx;
+    padding: 24rpx 40rpx;
+  }
+
+  /* 发送按钮调整 */
+  .send-btn {
+    width: 160rpx;
+    height: 96rpx;
+    font-size: 36rpx;
+  }
+
+  /* 快捷问题容器调整 */
+  .quick-questions-container {
+    padding: 40rpx;
+  }
+
+  .quick-questions-scroll {
+    gap: 24rpx;
+    padding-bottom: 12rpx;
+  }
+
+  .quick-question-item {
+    padding: 24rpx;
+    font-size: 30rpx;
+    min-width: 200rpx;
+  }
+
+  /* 音频播放器调整 */
+  .audio-player {
+    padding: 24rpx;
+  }
 }

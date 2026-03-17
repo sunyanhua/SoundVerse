@@ -3,7 +3,7 @@
 """
 import logging
 from datetime import timedelta
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -45,6 +45,20 @@ async def get_current_active_user(
             detail="无效的认证凭证",
         )
     return user
+
+
+async def get_current_user_optional(
+    db: AsyncSession = Depends(get_db),
+    token: Optional[str] = Depends(oauth2_scheme),
+) -> Optional[User]:
+    """
+    获取当前用户（可选）
+    """
+    try:
+        user = await get_current_user(db, token)
+        return user
+    except HTTPException:
+        return None
 
 
 @router.post("/wechat/login", response_model=Token)

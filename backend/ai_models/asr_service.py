@@ -97,16 +97,12 @@ class ASRService:
             return
 
         try:
-            # 检查必要的配置
+            # 检查必要的配置 - 严格检查，缺失配置直接报错
             if not self.app_key:
-                logger.warning("ALIYUN_ASR_APP_KEY 未配置，ASR服务将使用模拟模式")
-                self.initialized = True
-                return
+                raise ValueError("ALIYUN_ASR_APP_KEY 未配置，ASR服务无法使用真实API")
 
             if not self.access_key_id or not self.access_key_secret:
-                logger.warning("阿里云访问密钥未配置，ASR服务将使用模拟模式")
-                self.initialized = True
-                return
+                raise ValueError("阿里云访问密钥未配置，ASR服务无法使用真实API")
 
             # 阿里云录音文件识别服务强制使用 cn-shanghai 区域
             # 注意：OSS 区域保持不变（北京），ASR 使用上海区域是标准接入点
@@ -129,20 +125,15 @@ class ASRService:
 
         except Exception as e:
             logger.error(f"ASR服务初始化失败: {str(e)}")
-            # 初始化失败不影响服务启动，但ASR功能将使用模拟模式
-            self.initialized = True
+            # 初始化失败直接报错，不再使用模拟模式
+            raise RuntimeError(f"ASR服务初始化失败: {str(e)}") from e
 
     def is_real_mode(self) -> bool:
         """是否使用真实的阿里云ASR服务"""
-        # 如果有有效的app_key和access_key，即使SDK不可用，也尝试真实模式
-        # SDK可能通过RPC模式可用
+        # 严格检查：只有所有必需的密钥都配置，并且服务已初始化成功，才返回True
+        # 注意：此方法仅用于检查配置状态，实际API调用失败会直接抛出异常
         has_valid_keys = bool(self.app_key and self.access_key_id and self.access_key_secret)
-        if not has_valid_keys:
-            return False
-        # 如果SDK不可用，但密钥有效，仍然尝试真实模式（可能通过RPC）
-        # 初始化时会检查SDK并设置NLS_SDK_VERSION
-        # 如果HAS_NLS_SDK为False，initialize会设置模拟模式
-        return True
+        return has_valid_keys and self.initialized
 
     @retry(
         stop=stop_after_attempt(3),
@@ -174,9 +165,11 @@ class ASRService:
         try:
             logger.debug(f"ASR服务模式检查: NLS_SDK_VERSION={NLS_SDK_VERSION}, HAS_NLS_SDK={HAS_NLS_SDK}")
             if not self.is_real_mode():
-                logger.info("ASR模拟模式：返回示例文本")
-                # 模拟识别结果
-                return "这是语音识别的示例文本，实际环境中需要配置阿里云ASR服务。"
+                # 如果配置不完整，直接抛出异常
+                if not self.app_key or not self.access_key_id or not self.access_key_secret:
+                    raise ValueError("阿里云ASR服务配置不完整，缺少必要的API密钥")
+                # 如果配置完整但服务未初始化，先尝试初始化
+                await self.initialize()
 
             # 确保服务已初始化
             if not self.initialized:
@@ -229,7 +222,7 @@ class ASRService:
 
                     if not task_id:
                         logger.error("创建录音文件识别任务失败：未返回TaskId")
-                        return None
+                        raise RuntimeError("阿里云ASR API调用失败：未返回TaskId")
 
                     logger.info(f"录音文件识别任务创建成功: {task_id}")
 
@@ -251,10 +244,10 @@ class ASRService:
                                 return text
                             else:
                                 logger.warning("ASR识别成功但未返回文本")
-                                return None
+                                raise RuntimeError("阿里云ASR API调用成功但未返回文本")
                         elif status == 'FAILED':
                             logger.error(f"ASR识别任务失败: {status_result.get('Message')}")
-                            return None
+                            raise RuntimeError(f"阿里云ASR API调用失败: {status_result.get('Message')}")
                         elif status == 'RUNNING':
                             logger.debug(f"ASR识别任务进行中 ({attempt+1}/{max_attempts})")
                             continue
@@ -266,13 +259,12 @@ class ASRService:
                             continue
 
                     logger.error(f"ASR识别任务超时，超过 {max_attempts} 次轮询")
-                    return None
+                    raise RuntimeError(f"阿里云ASR API调用超时")
 
                 except Exception as e:
                     logger.error(f"使用新版本NLS SDK失败: {str(e)}")
-                    # 降级到模拟模式
-                    logger.info("ASR模拟模式：返回示例文本")
-                    return "这是语音识别的示例文本，实际环境中需要配置阿里云ASR服务。"
+                    # 直接抛出异常，禁止降级到模拟模式
+                    raise RuntimeError(f"阿里云ASR API调用失败: {str(e)}") from e
 
 
             # 旧版本SDK或RPC模式（保持原有逻辑）
@@ -342,7 +334,7 @@ class ASRService:
 
                 if status_text != 'SUCCESS' or not task_id:
                     logger.error(f"创建录音文件识别任务失败: {result}")
-                    return None
+                    raise RuntimeError(f"阿里云ASR API调用失败: {result}")
 
                 logger.info(f"录音文件识别任务创建成功: {task_id}")
 
@@ -386,10 +378,10 @@ class ASRService:
                             return text
                         else:
                             logger.warning("ASR识别成功但未返回文本")
-                            return None
+                            raise RuntimeError("阿里云ASR API调用成功但未返回文本")
                     elif status == 'FAILED':
                         logger.error(f"ASR识别任务失败: {get_result.get('Message')}")
-                        return None
+                        raise RuntimeError(f"阿里云ASR API调用失败: {get_result.get('Message')}")
                     elif status == 'RUNNING' or status == 'QUEUEING':
                         logger.debug(f"ASR识别任务进行中 ({attempt+1}/{max_attempts})，状态: {status}")
                         continue
@@ -401,17 +393,17 @@ class ASRService:
                         continue
 
                 logger.error(f"ASR识别任务超时，超过 {max_attempts} 次轮询")
-                return None
+                raise RuntimeError(f"阿里云ASR API调用超时")
 
         except ClientException as e:
             logger.error(f"阿里云客户端异常: {e.get_error_code() if hasattr(e, 'get_error_code') else e.error_code if hasattr(e, 'error_code') else 'Unknown'} - {e.get_error_msg() if hasattr(e, 'get_error_msg') else e.message if hasattr(e, 'message') else str(e)}")
-            return None
+            raise RuntimeError(f"阿里云ASR客户端异常: {str(e)}") from e
         except ServerException as e:
             logger.error(f"阿里云服务端异常: {e.get_error_code() if hasattr(e, 'get_error_code') else e.error_code if hasattr(e, 'error_code') else 'Unknown'} - {e.get_error_msg() if hasattr(e, 'get_error_msg') else e.message if hasattr(e, 'message') else str(e)}")
-            return None
+            raise RuntimeError(f"阿里云ASR服务端异常: {str(e)}") from e
         except Exception as e:
             logger.error(f"语音识别失败: {str(e)}", exc_info=True)
-            return None
+            raise RuntimeError(f"阿里云ASR调用失败: {str(e)}") from e
 
     @retry(
         stop=stop_after_attempt(3),
@@ -440,17 +432,19 @@ class ASRService:
         """
         try:
             if not self.is_real_mode():
-                logger.info("ASR模拟模式：返回示例文本")
-                return "这是流式语音识别的示例文本。"
+                # 如果配置不完整，直接抛出异常
+                if not self.app_key or not self.access_key_id or not self.access_key_secret:
+                    raise ValueError("阿里云ASR服务配置不完整，缺少必要的API密钥")
+                # 如果配置完整但服务未初始化，先尝试初始化
+                await self.initialize()
 
             # 在实际实现中，这里应该：
             # 1. 初始化流式识别器
             # 2. 分块发送音频数据
             # 3. 收集并返回完整结果
 
-            # 临时模拟实现
-            await asyncio.sleep(0.3)
-            return "这是通过阿里云ASR流式识别得到的文本。"
+            # TODO: 实现真实的流式识别
+            raise NotImplementedError("阿里云ASR流式识别暂未实现，需要使用真实API")
 
         except Exception as e:
             logger.error(f"流式语音识别失败: {str(e)}")
@@ -471,22 +465,18 @@ class ASRService:
         """
         try:
             if not self.is_real_mode():
-                logger.info("ASR模拟模式：返回带时间戳的示例文本")
-                return [
-                    {"text": "这是第一句话。", "start_time": 0.0, "end_time": 2.5},
-                    {"text": "这是第二句话。", "start_time": 2.5, "end_time": 5.0},
-                    {"text": "这是第三句话。", "start_time": 5.0, "end_time": 8.0},
-                ]
+                # 如果配置不完整，直接抛出异常
+                if not self.app_key or not self.access_key_id or not self.access_key_secret:
+                    raise ValueError("阿里云ASR服务配置不完整，缺少必要的API密钥")
+                # 如果配置完整但服务未初始化，先尝试初始化
+                await self.initialize()
 
             # 在实际实现中，这里应该：
             # 1. 调用阿里云ASR API（支持时间戳的接口）
             # 2. 解析时间戳信息
 
-            await asyncio.sleep(0.5)
-            return [
-                {"text": "示例文本第一段。", "start_time": 0.0, "end_time": 2.5},
-                {"text": "示例文本第二段。", "start_time": 2.5, "end_time": 5.0},
-            ]
+            # TODO: 实现真实的带时间戳识别
+            raise NotImplementedError("阿里云ASR带时间戳识别暂未实现，需要使用真实API")
 
         except Exception as e:
             logger.error(f"带时间戳的语音识别失败: {str(e)}")

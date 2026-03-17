@@ -33,10 +33,10 @@
                   data-audio-url="{{item.audio_url}}"
                   data-message-id="{{item.id}}"
                 >
-                  <text wx:if="{{!item.isPlaying}}">▶️</text>
-                  <text wx:if="{{item.isPlaying}}">⏸️</text>
+                  <text wx:if="{{!(currentAudioId === item.id && isPlaying)}}">▶️</text>
+                  <text wx:if="{{currentAudioId === item.id && isPlaying}}">⏸️</text>
                 </button>
-                <text class="audio-text">播放匹配的广播音频</text>
+                <text class="audio-text">广播音频</text>
               </view>
 
               <!-- 播放进度 -->
@@ -54,10 +54,14 @@
 
           <!-- 音频信息 -->
           <view wx:if="{{item.audio_segment_preview}}" class="audio-info">
-            <text class="audio-duration">时长: {{item.audio_segment_preview.duration || 0}}秒</text>
-            <text wx:if="{{item.similarity_score}}" class="similarity-score">
-              匹配度: {{ tools.formatScore(item.similarity_score) }}%
-            </text>
+            <view wx:if="{{item.audio_segment_preview.source_title}}" class="audio-source-line">
+              <text class="audio-source-label">广播节目：</text>
+              <text class="audio-source-value">{{item.audio_segment_preview.source_title}}</text>
+            </view>
+            <view wx:if="{{item.similarity_score}}" class="similarity-score-line">
+              <text class="similarity-score-label">匹配度：</text>
+              <text class="similarity-score-value">{{ tools.formatScore(item.similarity_score) }}%</text>
+            </view>
           </view>
         </view>
         <view class="message-time">{{formatTime(item.created_at)}}</view>
@@ -76,13 +80,15 @@
       <text class="empty-hint">输入任何问题，AI会用匹配的广播音频回答你</text>
 
       <!-- 快捷提问（仅在完全没有消息时显示） -->
-      <view wx:if="{{messages.length === 0}}" class="quick-questions">
+      <view wx:if="{{messages.length === 0}}" class="quick-questions-container">
         <text class="quick-title">试试这些问题：</text>
-        <block wx:for="{{quickQuestions}}" wx:key="index">
-          <view class="quick-question" bindtap="sendQuickQuestion" data-question="{{item}}">
-            <text>{{item}}</text>
-          </view>
-        </block>
+        <view class="quick-questions-scroll">
+          <block wx:for="{{quickQuestions}}" wx:key="index">
+            <view class="quick-question-item" bindtap="sendQuickQuestion" data-question="{{item}}">
+              <text>{{item}}</text>
+            </view>
+          </block>
+        </view>
       </view>
     </view>
   </scroll-view>
@@ -90,7 +96,7 @@
   <!-- 快捷问题区域（有消息时显示） -->
   <view wx:if="{{ quickQuestions.length > 0 && !isLoading && messages.length > 0 }}" class="quick-questions-container">
     <text class="quick-title">试试这些问题：</text>
-    <view class="quick-questions-grid">
+    <view class="quick-questions-scroll">
       <block wx:for="{{quickQuestions}}" wx:key="index">
         <view class="quick-question-item" bindtap="sendQuickQuestion" data-question="{{item}}">
           <text>{{item}}</text>
@@ -121,10 +127,17 @@
       </button>
     </view>
 
-    <!-- 录音功能（可选） -->
-    <view class="voice-input" wx:if="{{false}}">
-      <button class="record-btn" bindtouchstart="startRecord" bindtouchend="stopRecord">
-        <text>按住说话</text>
+    <!-- 录音功能 -->
+    <view class="voice-input" wx:if="{{true}}">
+      <button
+        class="record-btn {{isRecording ? 'recording' : ''}}"
+        bindtouchstart="startRecord"
+        bindtouchend="stopRecord"
+        bindlongpress="startRecord"
+        disabled="{{isSending || isLoading}}"
+      >
+        <text wx:if="{{!isRecording}}">🎤 按住说话</text>
+        <text wx:if="{{isRecording}}">⏹️ 录音中 {{recordTime}}秒</text>
       </button>
     </view>
   </view>

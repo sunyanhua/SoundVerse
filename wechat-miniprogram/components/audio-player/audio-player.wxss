@@ -156,7 +156,7 @@
   font-size: 28rpx;
 }
 
-/* 响应式调整 */
+/* 响应式调整 - 小屏幕 */
 @media (max-width: 375px) {
   .audio-player {
     padding: 24rpx;
@@ -168,5 +168,43 @@
 
   .action-icon {
     font-size: 40rpx;
+  }
+}
+
+/* PC端满屏展示样式 */
+@media (min-width: 768px) {
+  .audio-player {
+    padding: 48rpx;
+    border-radius: 24rpx;
+  }
+
+  .audio-title {
+    font-size: 44rpx;
+  }
+
+  .audio-duration {
+    font-size: 32rpx;
+  }
+
+  .control-btn {
+    width: 100rpx;
+    height: 100rpx;
+  }
+
+  .btn-icon {
+    font-size: 48rpx;
+  }
+
+  .time-display {
+    font-size: 30rpx;
+    min-width: 140rpx;
+  }
+
+  .action-icon {
+    font-size: 56rpx;
+  }
+
+  .action-text {
+    font-size: 28rpx;
   }
 }

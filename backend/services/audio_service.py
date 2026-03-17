@@ -286,7 +286,8 @@ async def get_audio_segment(
         raise ValueError("音频片段不存在")
 
     # 检查权限
-    if segment.review_status != "approved" and segment.user_id != user_id:
+    # 如果user_id为None（管理后台请求），允许访问所有片段
+    if user_id is not None and segment.review_status != "approved" and segment.user_id != user_id:
         raise ValueError("没有权限访问此音频片段")
 
     # 检查用户是否收藏
@@ -434,6 +435,180 @@ async def delete_audio_source(
     return True
 
 
+async def get_recommended_audios(
+    db: AsyncSession,
+    user_id: Optional[str] = None,
+    limit: int = 10,
+) -> List[AudioSegmentResponse]:
+    """
+    获取推荐音频片段
+    """
+    from sqlalchemy import select, func
+    from sqlalchemy.orm import selectinload
+    from shared.models.audio import AudioSegment
+    from shared.schemas.audio import AudioSegmentResponse
+
+    # 随机获取已审核通过的音频片段
+    stmt = select(AudioSegment).options(
+        selectinload(AudioSegment.source)
+    ).where(
+        AudioSegment.review_status == "approved"
+    ).order_by(
+        func.random()
+    ).limit(limit)
+
+    result = await db.execute(stmt)
+    segments = result.scalars().all()
+
+    responses = []
+    for segment in segments:
+        # 创建segment.__dict__副本并移除oss_url键
+        segment_dict = segment.__dict__.copy()
+        segment_dict.pop('oss_url', None)
+
+        # 获取source_title
+        source_title = segment.source.title if segment.source else None
+
+        # 修复音频URL
+        audio_url = _fix_audio_url_for_dev(segment.oss_url)
+
+        response = AudioSegmentResponse(
+            **segment_dict,
+            source_title=source_title,
+            oss_url=audio_url,
+            is_favorite=False,  # 暂时设置为False，需要时可以查询收藏状态
+        )
+        responses.append(response)
+
+    return responses
+
+
+async def get_audio_segments_paginated(
+    db: AsyncSession,
+    page: int = 1,
+    limit: int = 20,
+    query: Optional[str] = None,
+    review_status: Optional[str] = None,
+    source_name: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_order: Optional[str] = "desc",
+) -> dict:
+    """
+    获取分页的音频片段列表（用于管理界面）
+    """
+    from sqlalchemy import select, func, and_, or_
+    from sqlalchemy.orm import selectinload
+    from shared.models.audio import AudioSegment, AudioSource
+    from shared.schemas.audio import AudioSegmentResponse
+
+    # 构建查询
+    stmt = select(AudioSegment).options(
+        selectinload(AudioSegment.source)
+    )
+
+    # 应用过滤条件
+    conditions = []
+
+    # 审核状态过滤
+    if review_status:
+        conditions.append(AudioSegment.review_status == review_status)
+
+    # 日期范围过滤
+    if start_date:
+        conditions.append(AudioSegment.created_at >= start_date)
+    if end_date:
+        conditions.append(AudioSegment.created_at <= end_date)
+
+    # 文本查询（转录文本或ID）
+    if query:
+        query_lower = query.lower()
+        # 尝试将query解析为数字ID
+        try:
+            segment_id = int(query)
+            conditions.append(AudioSegment.id == segment_id)
+        except ValueError:
+            # 如果不是数字，则在转录文本中搜索
+            conditions.append(AudioSegment.transcription.ilike(f"%{query}%"))
+
+    # 音频源名称过滤
+    if source_name:
+        # 需要在子查询中过滤source名称
+        stmt = stmt.join(AudioSource)
+        conditions.append(
+            or_(
+                AudioSource.title.ilike(f"%{source_name}%"),
+                AudioSource.program_type.ilike(f"%{source_name}%"),
+            )
+        )
+
+    if conditions:
+        stmt = stmt.where(and_(*conditions))
+
+    # 计算总数
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar()
+
+    # 应用排序
+    if sort_by:
+        if sort_by == "id":
+            order_column = AudioSegment.id
+        elif sort_by == "created_at":
+            order_column = AudioSegment.created_at
+        elif sort_by == "duration":
+            order_column = AudioSegment.duration
+        else:
+            order_column = AudioSegment.created_at  # 默认
+
+        if sort_order == "asc":
+            stmt = stmt.order_by(order_column.asc())
+        else:
+            stmt = stmt.order_by(order_column.desc())
+    else:
+        # 默认按创建时间降序
+        stmt = stmt.order_by(AudioSegment.created_at.desc())
+
+    # 应用分页
+    offset = (page - 1) * limit
+    stmt = stmt.limit(limit).offset(offset)
+
+    # 执行查询
+    result = await db.execute(stmt)
+    segments = result.scalars().all()
+
+    # 转换为响应格式
+    data = []
+    for segment in segments:
+        # 创建segment.__dict__副本并移除oss_url键
+        segment_dict = segment.__dict__.copy()
+        segment_dict.pop('oss_url', None)
+
+        # 获取source_title
+        source_title = segment.source.title if segment.source else None
+
+        # 修复音频URL
+        audio_url = _fix_audio_url_for_dev(segment.oss_url)
+
+        response = AudioSegmentResponse(
+            **segment_dict,
+            source_title=source_title,
+            oss_url=audio_url,
+            is_favorite=False,  # 管理界面不需要收藏状态
+        )
+        data.append(response)
+
+    # 返回分页结果
+    return {
+        "data": data,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total + limit - 1) // limit if limit > 0 else 0,
+    }
+
+
 async def _process_audio_source_background(source_id: str, user_id: str):
     """
     后台处理音频源（模拟实现）
@@ -454,3 +629,58 @@ async def _process_audio_source_background(source_id: str, user_id: str):
 
     except Exception as e:
         logger.error(f"音频源后台处理失败: {source_id}, 错误: {str(e)}")
+
+
+async def get_audio_stats(db: AsyncSession) -> dict:
+    """
+    获取音频统计数据
+    
+    返回:
+        total: 音频片段总数
+        approved: 已审核通过数量
+        pending: 待审核数量
+        rejected: 已拒绝数量
+        users: 注册用户总数
+        sources: 音频源总数
+    """
+    from sqlalchemy import select, func
+    from shared.models.user import User
+    
+    # 统计音频片段总数
+    total_result = await db.execute(select(func.count(AudioSegment.id)))
+    total = total_result.scalar() or 0
+    
+    # 统计已审核通过数量
+    approved_result = await db.execute(
+        select(func.count(AudioSegment.id)).where(AudioSegment.review_status == "approved")
+    )
+    approved = approved_result.scalar() or 0
+    
+    # 统计待审核数量
+    pending_result = await db.execute(
+        select(func.count(AudioSegment.id)).where(AudioSegment.review_status == "pending")
+    )
+    pending = pending_result.scalar() or 0
+    
+    # 统计已拒绝数量
+    rejected_result = await db.execute(
+        select(func.count(AudioSegment.id)).where(AudioSegment.review_status == "rejected")
+    )
+    rejected = rejected_result.scalar() or 0
+    
+    # 统计用户总数
+    users_result = await db.execute(select(func.count(User.id)))
+    users = users_result.scalar() or 0
+    
+    # 统计音频源总数
+    sources_result = await db.execute(select(func.count(AudioSource.id)))
+    sources = sources_result.scalar() or 0
+    
+    return {
+        "total": total,
+        "approved": approved,
+        "pending": pending,
+        "rejected": rejected,
+        "users": users,
+        "sources": sources,
+    }

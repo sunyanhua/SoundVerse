@@ -126,7 +126,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children }) => {
         </Header>
         <Content
           style={{
-            margin: '24px 16px',
+            margin: '24px 8px',
             padding: 24,
             minHeight: 280,
             background: colorBgContainer,

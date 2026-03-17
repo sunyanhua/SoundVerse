@@ -14,7 +14,7 @@ const api = axios.create({
 
 // 类型定义
 export interface AudioSource {
-  id: number
+  id: string
   name: string
   program_name?: string
   broadcast_date?: string
@@ -23,8 +23,8 @@ export interface AudioSource {
 }
 
 export interface AudioSegment {
-  id: number
-  source_id: number
+  id: string
+  source_id: string
   transcription: string
   oss_url: string
   oss_key: string
@@ -33,9 +33,25 @@ export interface AudioSegment {
   end_time: number
   review_status: 'pending' | 'approved' | 'rejected'
   embedding?: number[]
+  vector?: number[]
   created_at: string
   updated_at: string
   source?: AudioSource
+  source_title?: string
+  // 后端返回的其他字段
+  language?: string
+  speaker?: string | null
+  emotion?: string | null
+  sentiment_score?: number | null
+  tags?: string[]
+  categories?: string[]
+  keywords?: string[] | null
+  user_id?: string | null
+  play_count?: number
+  favorite_count?: number
+  share_count?: number
+  reviewer_id?: string | null
+  review_comment?: string | null
 }
 
 export interface PaginatedResponse<T> {
@@ -60,8 +76,8 @@ export interface SearchParams {
 
 // 模拟数据（用于开发）
 const mockAudioSegments: AudioSegment[] = Array.from({ length: 50 }, (_, i) => ({
-  id: i + 1,
-  source_id: Math.floor(i / 10) + 1,
+  id: (i + 1).toString(),
+  source_id: (Math.floor(i / 10) + 1).toString(),
   transcription: `音频片段 ${i + 1} 的转录文本，这是测试数据用于展示音频管理功能。`,
   oss_url: `https://example.com/audio/segment_${i}.mp3`,
   oss_key: `audio/segment_${i}.mp3`,
@@ -72,13 +88,14 @@ const mockAudioSegments: AudioSegment[] = Array.from({ length: 50 }, (_, i) => (
   created_at: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000).toISOString(),
   updated_at: new Date(Date.now() - Math.floor(Math.random() * 7) * 24 * 60 * 60 * 1000).toISOString(),
   source: {
-    id: Math.floor(i / 10) + 1,
+    id: (Math.floor(i / 10) + 1).toString(),
     name: `音频源 ${Math.floor(i / 10) + 1}`,
     program_name: ['一路畅通', '行走天下', '北京新闻'][Math.floor(Math.random() * 3)],
     broadcast_date: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     created_at: new Date(Date.now() - Math.floor(Math.random() * 60) * 24 * 60 * 60 * 1000).toISOString(),
     updated_at: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000).toISOString(),
   },
+  source_title: ['一路畅通', '行走天下', '北京新闻'][Math.floor(Math.random() * 3)],
 }))
 
 // 音频服务
@@ -93,59 +110,25 @@ export const audioService = {
       source_name = '',
       start_date = '',
       end_date = '',
+      sort_by = '',
+      sort_order = '',
     } = params
 
-    try {
-      // 实际API调用
-      const response = await api.get('/audio/segments', {
-        params: {
-          page,
-          limit,
-          query,
-          review_status,
-          source_name,
-          start_date,
-          end_date,
-        },
-      })
-      return response.data
-    } catch (error) {
-      console.error('获取音频片段失败，使用模拟数据:', error)
-
-      // 模拟筛选
-      let filteredData = [...mockAudioSegments]
-
-      if (query) {
-        filteredData = filteredData.filter(item =>
-          item.transcription.toLowerCase().includes(query.toLowerCase()) ||
-          item.id.toString().includes(query)
-        )
-      }
-
-      if (review_status) {
-        filteredData = filteredData.filter(item => item.review_status === review_status)
-      }
-
-      if (source_name) {
-        filteredData = filteredData.filter(item =>
-          item.source?.name?.toLowerCase().includes(source_name.toLowerCase()) ||
-          item.source?.program_name?.toLowerCase().includes(source_name.toLowerCase())
-        )
-      }
-
-      // 模拟分页
-      const start = (page - 1) * limit
-      const end = start + limit
-      const paginatedData = filteredData.slice(start, end)
-
-      return {
-        data: paginatedData,
-        total: filteredData.length,
+    // 实际API调用
+    const response = await api.get('/audio/segments', {
+      params: {
         page,
         limit,
-        total_pages: Math.ceil(filteredData.length / limit),
-      }
-    }
+        query,
+        review_status,
+        source_name,
+        start_date,
+        end_date,
+        sort_by,
+        sort_order,
+      },
+    })
+    return response.data
   },
 
   // 搜索音频
@@ -166,7 +149,7 @@ export const audioService = {
   },
 
   // 获取单个音频片段
-  async getSegment(id: number): Promise<AudioSegment> {
+  async getSegment(id: string): Promise<AudioSegment> {
     try {
       const response = await api.get(`/audio/segments/${id}`)
       return response.data
@@ -181,7 +164,7 @@ export const audioService = {
   },
 
   // 更新音频片段审核状态
-  async updateReviewStatus(id: number, status: 'pending' | 'approved' | 'rejected'): Promise<void> {
+  async updateReviewStatus(id: string, status: 'pending' | 'approved' | 'rejected'): Promise<void> {
     try {
       await api.patch(`/audio/segments/${id}/review`, { status })
     } catch (error) {
@@ -192,7 +175,7 @@ export const audioService = {
   },
 
   // 批量更新审核状态
-  async batchUpdateReviewStatus(ids: number[], status: 'pending' | 'approved' | 'rejected'): Promise<void> {
+  async batchUpdateReviewStatus(ids: string[], status: 'pending' | 'approved' | 'rejected'): Promise<void> {
     try {
       await api.post('/audio/segments/batch-review', { ids, status })
     } catch (error) {
@@ -204,26 +187,8 @@ export const audioService = {
 
   // 获取统计信息
   async getStats() {
-    try {
-      const response = await api.get('/audio/stats')
-      return response.data
-    } catch (error) {
-      console.error('获取统计信息失败:', error)
-
-      // 模拟统计
-      const total = mockAudioSegments.length
-      const approved = mockAudioSegments.filter(item => item.review_status === 'approved').length
-      const pending = mockAudioSegments.filter(item => item.review_status === 'pending').length
-      const rejected = mockAudioSegments.filter(item => item.review_status === 'rejected').length
-
-      return {
-        total,
-        approved,
-        pending,
-        rejected,
-        sources: Array.from(new Set(mockAudioSegments.map(item => item.source?.program_name))).filter(Boolean).length,
-      }
-    }
+    const response = await api.get('/audio/stats')
+    return response.data
   },
 }
 
