@@ -64,8 +64,23 @@ async function request(options) {
         wx.showLoading({ title: loadingText, mask: true });
     }
     try {
+        // 打印当前运行环境
+        try {
+            const accountInfo = wx.getAccountInfoSync();
+            console.log('当前运行环境:', accountInfo.miniProgram.envVersion);
+        }
+        catch (e) {
+            console.log('获取运行环境失败:', e);
+        }
         // 处理查询参数
-        let requestUrl = url.startsWith('http') ? url : `${(0, config_1.getBaseUrl)()}${url}`;
+        let requestUrl = url.startsWith('http') ? url : '';
+        if (!requestUrl) {
+            const baseUrl = (0, config_1.getBaseUrl)();
+            // 确保baseUrl不以斜杠结尾，url以斜杠开头
+            const normalizedBaseUrl = baseUrl.replace(/\/$/, ''); // 移除末尾斜杠
+            const normalizedUrl = url.startsWith('/') ? url : `/${url}`; // 确保url以斜杠开头
+            requestUrl = `${normalizedBaseUrl}${normalizedUrl}`;
+        }
         if (params) {
             const queryParams = [];
             Object.entries(params).forEach(([key, value]) => {
@@ -81,6 +96,7 @@ async function request(options) {
         // 合并请求头
         const requestHeaders = Object.assign(Object.assign({}, getHeaders(withAuth)), headers);
         // 发起请求
+        console.log('🚀 [网络请求] 完整地址:', requestUrl);
         const response = await new Promise((resolve, reject) => {
             wx.request({
                 url: requestUrl,
@@ -145,9 +161,27 @@ async function uploadFile(url, filePath, formData, options) {
         wx.showLoading({ title: loadingText, mask: true });
     }
     try {
+        // 打印当前运行环境
+        try {
+            const accountInfo = wx.getAccountInfoSync();
+            console.log('当前运行环境:', accountInfo.miniProgram.envVersion);
+        }
+        catch (e) {
+            console.log('获取运行环境失败:', e);
+        }
+        // 处理上传URL
+        let uploadUrl = url.startsWith('http') ? url : '';
+        if (!uploadUrl) {
+            const baseUrl = (0, config_1.getBaseUrl)();
+            // 确保baseUrl不以斜杠结尾，url以斜杠开头
+            const normalizedBaseUrl = baseUrl.replace(/\/$/, ''); // 移除末尾斜杠
+            const normalizedUrl = url.startsWith('/') ? url : `/${url}`; // 确保url以斜杠开头
+            uploadUrl = `${normalizedBaseUrl}${normalizedUrl}`;
+        }
+        console.log('🚀 [文件上传] 完整地址:', uploadUrl);
         const response = await new Promise((resolve, reject) => {
             wx.uploadFile({
-                url: url.startsWith('http') ? url : `${(0, config_1.getBaseUrl)()}${url}`,
+                url: uploadUrl,
                 filePath,
                 name: 'file',
                 formData: formData || {},

@@ -1,92 +1,145 @@
 "use strict";
 /**
  * 小程序环境配置
- * 支持 local (本机开发), dev (公网测试), prod (正式上线) 三个环境
+ * 强制锁定生产环境，避免真机测试问题
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getEnvInfo = exports.clearLocalBaseUrl = exports.setLocalBaseUrl = exports.clearManualEnvironment = exports.setManualEnvironment = exports.getBaseUrl = exports.getCurrentEnvConfig = exports.ENV_CONFIG = void 0;
-// 环境配置映射
-exports.ENV_CONFIG = {
-    local: {
-        name: 'local',
-        baseUrl: 'http://localhost:8000',
-        description: '本机开发环境'
-    },
-    dev: {
-        name: 'dev',
-        baseUrl: 'https://soundverse.vbegin.com.cn/api',
-        description: '公网测试环境'
-    },
-    prod: {
-        name: 'prod',
-        baseUrl: 'https://soundverse.vbegin.com.cn/api',
-        description: '正式上线环境'
-    }
+exports.clearLocalBaseUrl = exports.setLocalBaseUrl = exports.clearManualEnvironment = exports.setManualEnvironment = exports.getEnvInfo = exports.resolveAudioUrl = exports.getAudioBaseUrl = exports.getBaseUrl = exports.PROD_CONFIG = exports.FORCE_PROD = void 0;
+// 强制生产环境开关 - 设为 true 时，无论当前是开发版还是体验版，都使用生产环境
+exports.FORCE_PROD = true;
+// 生产环境配置
+exports.PROD_CONFIG = {
+    name: 'prod',
+    baseUrl: 'https://soundverse.vbegin.com.cn/api',
+    description: '强制生产环境'
 };
-// 微信小程序账号环境映射
-const WECHAT_ENV_MAP = {
-    'develop': 'local',
-    'trial': 'dev',
-    'release': 'prod' // 正式版
-};
-// 获取当前环境配置
-function getCurrentEnvConfig() {
-    var _a;
-    try {
-        // 1. 首先检查本地存储的手动覆盖设置
-        const manualEnv = wx.getStorageSync('manual_env');
-        if (manualEnv && exports.ENV_CONFIG[manualEnv]) {
-            console.log(`使用手动指定的环境: ${manualEnv}`);
-            const config = Object.assign({}, exports.ENV_CONFIG[manualEnv]);
-            // 如果是local环境，使用自定义baseUrl
-            if (manualEnv === 'local') {
-                config.baseUrl = getLocalBaseUrl();
-            }
-            return config;
-        }
-        // 2. 获取微信账号信息判断环境
-        const accountInfo = wx.getAccountInfoSync();
-        const wechatEnv = ((_a = accountInfo.miniProgram) === null || _a === void 0 ? void 0 : _a.envVersion) || 'develop';
-        const mappedEnv = WECHAT_ENV_MAP[wechatEnv] || 'local';
-        console.log(`微信环境: ${wechatEnv}, 映射到: ${mappedEnv}`);
-        const config = Object.assign({}, exports.ENV_CONFIG[mappedEnv]);
-        // 如果是local环境，使用自定义baseUrl
-        if (mappedEnv === 'local') {
-            config.baseUrl = getLocalBaseUrl();
-        }
-        return config;
-    }
-    catch (error) {
-        console.error('获取环境配置失败，使用默认local环境:', error);
-        const config = Object.assign({}, exports.ENV_CONFIG.local);
-        config.baseUrl = getLocalBaseUrl();
-        return config;
-    }
-}
-exports.getCurrentEnvConfig = getCurrentEnvConfig;
 // 获取当前环境的BASE_URL
 function getBaseUrl() {
-    return getCurrentEnvConfig().baseUrl;
+    // 如果强制生产环境开关开启，直接返回生产环境URL
+    if (exports.FORCE_PROD) {
+        console.log('🚨 强制生产环境模式已开启，使用:', exports.PROD_CONFIG.baseUrl);
+        return exports.PROD_CONFIG.baseUrl;
+    }
+    // 以下是保留原有逻辑（当FORCE_PROD=false时使用）
+    try {
+        // 检查本地存储的手动覆盖设置
+        const manualEnv = wx.getStorageSync('manual_env');
+        if (manualEnv) {
+            console.log(`使用手动指定的环境: ${manualEnv}`);
+            // 简化处理，直接返回对应环境的URL
+            if (manualEnv === 'local') {
+                const customUrl = wx.getStorageSync('local_base_url');
+                if (customUrl && customUrl.startsWith('http')) {
+                    return customUrl;
+                }
+                return 'http://localhost:8000';
+            }
+            else if (manualEnv === 'dev') {
+                return 'http://dev-api.soundverse.example.com';
+            }
+            else {
+                return 'https://api.soundverse.example.com';
+            }
+        }
+        // 获取微信账号信息判断环境
+        const accountInfo = wx.getAccountInfoSync();
+        const wechatEnv = accountInfo.miniProgram?.envVersion || 'develop';
+        // 微信环境映射
+        if (wechatEnv === 'release') {
+            return 'https://api.soundverse.example.com';
+        }
+        else if (wechatEnv === 'trial') {
+            return 'http://dev-api.soundverse.example.com';
+        }
+        else {
+            // develop 或其他
+            const customUrl = wx.getStorageSync('local_base_url');
+            if (customUrl && customUrl.startsWith('http')) {
+                return customUrl;
+            }
+            return 'http://localhost:8000';
+        }
+    }
+    catch (error) {
+        console.error('获取环境配置失败，使用默认生产环境:', error);
+        return exports.PROD_CONFIG.baseUrl;
+    }
 }
 exports.getBaseUrl = getBaseUrl;
-// 设置手动环境（用于开发者工具中强制指定）
+// 获取音频文件的基础URL（用于音频播放器）
+function getAudioBaseUrl() {
+    // 音频文件和生产环境API使用相同域名，但路径不同
+    // 注意：音频文件可能存储在OSS，这里返回域名部分
+    if (exports.FORCE_PROD) {
+        return 'https://soundverse.vbegin.com.cn';
+    }
+    // 非强制模式，根据当前环境返回对应域名
+    const baseUrl = getBaseUrl();
+    // 从baseUrl中提取域名部分（移除/api路径）
+    try {
+        const urlObj = new URL(baseUrl);
+        return `${urlObj.protocol}//${urlObj.host}`;
+    }
+    catch (e) {
+        console.error('解析baseUrl失败:', e);
+        return baseUrl.replace(/\/api\/?$/, ''); // 移除末尾的/api
+    }
+}
+exports.getAudioBaseUrl = getAudioBaseUrl;
+// 解析音频URL，如果是相对路径则添加音频基础域名
+function resolveAudioUrl(audioUrl) {
+    if (!audioUrl) {
+        return audioUrl;
+    }
+    // 如果已经是完整URL，直接返回
+    if (audioUrl.startsWith('http://') || audioUrl.startsWith('https://')) {
+        return audioUrl;
+    }
+    // 相对路径，添加音频基础域名
+    const audioBaseUrl = getAudioBaseUrl();
+    const normalizedBaseUrl = audioBaseUrl.replace(/\/$/, '');
+    const normalizedUrl = audioUrl.startsWith('/') ? audioUrl : `/${audioUrl}`;
+    const resolvedUrl = `${normalizedBaseUrl}${normalizedUrl}`;
+    console.log('🎵 解析音频URL:', { original: audioUrl, resolved: resolvedUrl, audioBaseUrl: audioBaseUrl });
+    return resolvedUrl;
+}
+exports.resolveAudioUrl = resolveAudioUrl;
+// 获取当前环境信息（用于调试）
+function getEnvInfo() {
+    const baseUrl = getBaseUrl();
+    const isForceProd = exports.FORCE_PROD;
+    return {
+        currentEnv: isForceProd ? 'prod (forced)' : 'auto',
+        baseUrl: baseUrl,
+        description: isForceProd ? '强制生产环境' : '自动检测环境',
+        isForceProd: isForceProd
+    };
+}
+exports.getEnvInfo = getEnvInfo;
+// 兼容原有API（简化实现）
 function setManualEnvironment(env) {
-    if (!exports.ENV_CONFIG[env]) {
-        console.error(`无效的环境类型: ${env}`);
+    if (exports.FORCE_PROD) {
+        console.log('🚨 强制生产环境模式已开启，手动设置无效');
         return;
     }
     wx.setStorageSync('manual_env', env);
-    console.log(`已手动设置环境为: ${env}, BASE_URL: ${exports.ENV_CONFIG[env].baseUrl}`);
+    console.log(`已手动设置环境为: ${env}`);
 }
 exports.setManualEnvironment = setManualEnvironment;
-// 清除手动环境设置
 function clearManualEnvironment() {
+    if (exports.FORCE_PROD) {
+        console.log('🚨 强制生产环境模式已开启，清除设置无效');
+        return;
+    }
     wx.removeStorageSync('manual_env');
-    console.log('已清除手动环境设置，将使用自动检测');
+    console.log('已清除手动环境设置');
 }
 exports.clearManualEnvironment = clearManualEnvironment;
-// 设置local环境的自定义baseUrl（用于指定本机IP）
 function setLocalBaseUrl(baseUrl) {
+    if (exports.FORCE_PROD) {
+        console.log('🚨 强制生产环境模式已开启，设置本地URL无效');
+        return;
+    }
     if (!baseUrl.startsWith('http')) {
         console.error('baseUrl必须以http://或https://开头');
         return;
@@ -95,31 +148,12 @@ function setLocalBaseUrl(baseUrl) {
     console.log(`已设置local环境baseUrl为: ${baseUrl}`);
 }
 exports.setLocalBaseUrl = setLocalBaseUrl;
-// 清除local环境自定义baseUrl
 function clearLocalBaseUrl() {
+    if (exports.FORCE_PROD) {
+        console.log('🚨 强制生产环境模式已开启，清除设置无效');
+        return;
+    }
     wx.removeStorageSync('local_base_url');
-    console.log('已清除local环境自定义baseUrl，使用默认值');
+    console.log('已清除local环境自定义baseUrl');
 }
 exports.clearLocalBaseUrl = clearLocalBaseUrl;
-// 获取local环境的baseUrl（优先使用自定义值）
-function getLocalBaseUrl() {
-    const customUrl = wx.getStorageSync('local_base_url');
-    if (customUrl && customUrl.startsWith('http')) {
-        return customUrl;
-    }
-    return exports.ENV_CONFIG.local.baseUrl;
-}
-// 获取当前环境信息（用于调试）
-function getEnvInfo() {
-    const config = getCurrentEnvConfig();
-    const manualEnv = wx.getStorageSync('manual_env');
-    const customLocalUrl = wx.getStorageSync('local_base_url');
-    return {
-        currentEnv: config.name,
-        baseUrl: config.baseUrl,
-        description: config.description,
-        isManual: !!manualEnv && manualEnv === config.name,
-        isCustomLocalUrl: config.name === 'local' && !!customLocalUrl
-    };
-}
-exports.getEnvInfo = getEnvInfo;

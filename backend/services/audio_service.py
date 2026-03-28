@@ -42,7 +42,7 @@ def _fix_audio_url_for_dev(audio_url: Optional[str]) -> Optional[str]:
         # 检查URL是否包含无法访问的旧测试域名
         # 只替换旧的无法访问的域名，保留可访问的OSS URL
         old_test_domains = [
-            "ai-sun.vbegin.com.cn",  # 旧格式，无法访问
+            # "ai-sun.vbegin.com.cn",  # 旧格式，无法访问
         ]
 
         # 新的OSS格式可以访问，不需要替换

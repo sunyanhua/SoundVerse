@@ -1,5 +1,6 @@
 // 聊天页面逻辑
 import { post, get } from '../../services/api';
+import { resolveAudioUrl } from '../../config';
 import type { ChatResponse, ChatMessage } from '../../types/api';
 
 // 页面数据接口
@@ -492,8 +493,9 @@ Page({
     }
 
     // 设置音频源并播放
-    console.log('设置音频源:', audioUrl);
-    audioContext.src = audioUrl;
+    const resolvedAudioUrl = resolveAudioUrl(audioUrl);
+    console.log('设置音频源:', { original: audioUrl, resolved: resolvedAudioUrl });
+    audioContext.src = resolvedAudioUrl;
     console.log('audioContext.src已设置为:', audioContext.src);
 
     try {
@@ -642,8 +644,9 @@ Page({
     }
 
     // 设置音频源
-    console.log('设置音频源:', audioUrl);
-    audioContext.src = audioUrl;
+    const resolvedAudioUrl = resolveAudioUrl(audioUrl);
+    console.log('设置音频源:', { original: audioUrl, resolved: resolvedAudioUrl });
+    audioContext.src = resolvedAudioUrl;
 
     // 监听音频加载完成事件
     const onCanplay = () => {

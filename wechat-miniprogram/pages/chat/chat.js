@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 // 聊天页面逻辑
 const api_1 = require("../../services/api");
+const config_1 = require("../../config");
 // 页面实例
 Page({
     /**
@@ -413,8 +414,9 @@ Page({
             // onStop事件会更新currentAudioId和isPlaying状态
         }
         // 设置音频源并播放
-        console.log('设置音频源:', audioUrl);
-        audioContext.src = audioUrl;
+        const resolvedAudioUrl = (0, config_1.resolveAudioUrl)(audioUrl);
+        console.log('设置音频源:', { original: audioUrl, resolved: resolvedAudioUrl });
+        audioContext.src = resolvedAudioUrl;
         console.log('audioContext.src已设置为:', audioContext.src);
         try {
             audioContext.play();
@@ -556,8 +558,9 @@ Page({
             this.stopAudio();
         }
         // 设置音频源
-        console.log('设置音频源:', audioUrl);
-        audioContext.src = audioUrl;
+        const resolvedAudioUrl = (0, config_1.resolveAudioUrl)(audioUrl);
+        console.log('设置音频源:', { original: audioUrl, resolved: resolvedAudioUrl });
+        audioContext.src = resolvedAudioUrl;
         // 监听音频加载完成事件
         const onCanplay = () => {
             // 移除事件监听器，避免重复触发
@@ -590,7 +593,7 @@ Page({
         // 设置超时，防止音频加载失败
         setTimeout(() => {
             // 检查是否仍然需要播放（可能用户已手动操作）
-            if (audioContext && audioContext.src === audioUrl && !this.data.isPlaying) {
+            if (audioContext && audioContext.src === resolvedAudioUrl && !this.data.isPlaying) {
                 // 如果5秒后仍未触发onCanplay，尝试直接播放
                 audioContext.offCanplay(onCanplay);
                 console.log('音频加载超时，尝试直接播放');
