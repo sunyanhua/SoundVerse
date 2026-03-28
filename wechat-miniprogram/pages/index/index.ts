@@ -1,5 +1,5 @@
 // 首页逻辑
-import { resolveAudioUrl } from '../../config';
+import { resolveAudioUrl, getBaseUrl } from '../../config';
 Page({
   /**
    * 页面的初始数据
@@ -94,7 +94,7 @@ Page({
       // 调用真实API获取推荐音频
       const response = await new Promise<any>((resolve, reject) => {
         wx.request({
-          url: 'http://localhost:8000/api/v1/audio/recommended',
+          url: getBaseUrl() + '/api/v1/audio/recommended',
           method: 'GET',
           data: {
             limit: 10,

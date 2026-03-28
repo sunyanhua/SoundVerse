@@ -15,10 +15,18 @@ export const PROD_CONFIG = {
 
 // 获取当前环境的BASE_URL
 export function getBaseUrl(): string {
+  // 辅助函数：清理URL，确保不以/api结尾
+  const cleanUrl = (url: string): string => {
+    // 移除末尾的/api和斜杠
+    return url.replace(/\/api\/?$/, '').replace(/\/$/, '');
+  };
+
   // 如果强制生产环境开关开启，直接返回生产环境URL
   if (FORCE_PROD) {
-    console.log('🚨 强制生产环境模式已开启，使用:', PROD_CONFIG.baseUrl);
-    return PROD_CONFIG.baseUrl;
+    const baseUrl = PROD_CONFIG.baseUrl;
+    const cleanedUrl = cleanUrl(baseUrl);
+    console.log('🚨 强制生产环境模式已开启，使用:', cleanedUrl);
+    return cleanedUrl;
   }
 
   // 以下是保留原有逻辑（当FORCE_PROD=false时使用）
@@ -31,7 +39,7 @@ export function getBaseUrl(): string {
       if (manualEnv === 'local') {
         const customUrl = wx.getStorageSync('local_base_url') as string;
         if (customUrl && customUrl.startsWith('http')) {
-          return customUrl;
+          return cleanUrl(customUrl);
         }
         return 'http://localhost:8000';
       } else if (manualEnv === 'dev') {
@@ -54,13 +62,13 @@ export function getBaseUrl(): string {
       // develop 或其他
       const customUrl = wx.getStorageSync('local_base_url') as string;
       if (customUrl && customUrl.startsWith('http')) {
-        return customUrl;
+        return cleanUrl(customUrl);
       }
       return 'http://localhost:8000';
     }
   } catch (error) {
     console.error('获取环境配置失败，使用默认生产环境:', error);
-    return PROD_CONFIG.baseUrl;
+    return cleanUrl(PROD_CONFIG.baseUrl);
   }
 }
 

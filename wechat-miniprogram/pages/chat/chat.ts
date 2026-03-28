@@ -1,5 +1,5 @@
 // 聊天页面逻辑
-import { post, get } from '../../services/api';
+import { post, get, uploadFile } from '../../services/api';
 import { resolveAudioUrl } from '../../config';
 import type { ChatResponse, ChatMessage } from '../../types/api';
 
@@ -855,20 +855,20 @@ Page({
 
     try {
       // 上传录音文件到后端进行ASR识别
-      const response = await wx.uploadFile({
-        url: `${getApp().globalData.baseUrl}/api/v1/chat/voice`,
-        filePath: tempFilePath,
-        name: 'audio',
-        formData: {
+      const response = await uploadFile(
+        '/api/v1/chat/voice',
+        tempFilePath,
+        {
           session_id: sessionId || '',
           format: 'mp3',
           sample_rate: '16000',
         },
-      }) as any;
+        { showLoading: false } // 已经在上面显示了loading
+      );
 
-      if (response.statusCode === 200) {
-        const result = JSON.parse(response.data);
-        if (result.success && result.text) {
+      if (response.success && response.data) {
+        const result = response.data;
+        if (result.text) {
           // 添加用户消息（语音识别出的文本）
           const userMessage: ChatMessage = {
             id: `user_${Date.now()}`,
@@ -921,7 +921,7 @@ Page({
           });
         }
       } else {
-        throw new Error(`上传失败: ${response.statusCode}`);
+        throw new Error(`上传失败: ${response.code} - ${response.message}`);
       }
     } catch (error) {
       console.error('语音识别失败:', error);

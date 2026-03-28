@@ -96,8 +96,8 @@ export async function request<T>(
     let requestUrl = url.startsWith('http') ? url : '';
     if (!requestUrl) {
       const baseUrl = getBaseUrl();
-      // 确保baseUrl不以斜杠结尾，url以斜杠开头
-      const normalizedBaseUrl = baseUrl.replace(/\/$/, ''); // 移除末尾斜杠
+      // 确保baseUrl不以/api结尾，也不以斜杠结尾
+      const normalizedBaseUrl = baseUrl.replace(/\/api\/?$/, '').replace(/\/$/, ''); // 移除末尾的/api和斜杠
       const normalizedUrl = url.startsWith('/') ? url : `/${url}`; // 确保url以斜杠开头
       requestUrl = `${normalizedBaseUrl}${normalizedUrl}`;
     }
@@ -234,8 +234,8 @@ export async function uploadFile(
     let uploadUrl = url.startsWith('http') ? url : '';
     if (!uploadUrl) {
       const baseUrl = getBaseUrl();
-      // 确保baseUrl不以斜杠结尾，url以斜杠开头
-      const normalizedBaseUrl = baseUrl.replace(/\/$/, ''); // 移除末尾斜杠
+      // 确保baseUrl不以/api结尾，也不以斜杠结尾
+      const normalizedBaseUrl = baseUrl.replace(/\/api\/?$/, '').replace(/\/$/, ''); // 移除末尾的/api和斜杠
       const normalizedUrl = url.startsWith('/') ? url : `/${url}`; // 确保url以斜杠开头
       uploadUrl = `${normalizedBaseUrl}${normalizedUrl}`;
     }

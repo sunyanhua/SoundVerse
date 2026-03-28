@@ -666,7 +666,16 @@ async def generate_chat_suggestions(
     except Exception as e:
         logger.error(f"生成聊天建议失败: {str(e)}")
         # 失败时返回默认对话建议
-        return get_default_conversational_suggestions()
+        try:
+            return get_default_conversational_suggestions()
+        except Exception as inner_e:
+            logger.error(f"获取默认建议也失败: {str(inner_e)}")
+            # 终极硬编码回退
+            return [
+                "北京时间", "新闻广播", "路况信息", "天气预报", "体育新闻",
+                "今天几号", "现在几点", "有什么新闻", "天气怎么样", "交通状况",
+                "今日热点", "最新消息", "广播节目", "音频片段", "聊天对话"
+            ]
 
 
 def _get_default_suggestions() -> List[str]:

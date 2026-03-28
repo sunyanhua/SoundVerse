@@ -169,6 +169,10 @@ async def verify_token(token: str) -> Dict[str, Any]:
     """
     验证令牌
     """
+    # 防止传入非字符串对象（如Depends对象）
+    if not isinstance(token, str):
+        raise ValueError(f"Token must be a string, got {type(token).__name__}")
+
     try:
         payload = jwt.decode(
             token,
