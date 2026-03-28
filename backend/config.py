@@ -28,11 +28,17 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7天
 
     # CORS 配置
-    CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000", "http://localhost:8080"]
+    CORS_ORIGINS: List[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://127.0.0.1",
+        "http://localhost"
+    ]
     ALLOWED_HOSTS: List[str] = ["*"]
 
     # 数据库配置
-    DATABASE_URL: str = "mysql+asyncmy://user:password@localhost:3306/soundverse"
+    DATABASE_URL: str = "mysql+aiomysql://user:password@localhost:3306/soundverse"
     DATABASE_POOL_SIZE: int = 20
     DATABASE_POOL_RECYCLE: int = 3600
     DATABASE_ECHO: bool = False
@@ -89,11 +95,11 @@ class Settings(BaseSettings):
     MAX_AUDIO_DURATION: float = 300.0  # 最长音频时长（秒）
 
     # 音频分割配置
-    MIN_SILENCE_LEN: int = 300  # 毫秒（降低以检测更短的静音）
-    SILENCE_THRESH: int = -35  # dB（稍微提高阈值，检测更敏感的静音）
-    KEEP_SILENCE: int = 100  # 毫秒（减少保留的静音）
-    MIN_SEGMENT_DURATION: float = 1.5  # 最短片段时长（秒）
-    MAX_SEGMENT_DURATION: float = 8.0  # 最长片段时长（秒）大幅缩短至8秒，切出"短小精干、语义集中"的短句
+    MIN_SILENCE_LEN: int = 500  # 毫秒（符合CLAUDE.md规范）
+    SILENCE_THRESH: int = -40  # dB（符合CLAUDE.md规范）
+    KEEP_SILENCE: int = 200  # 毫秒（符合.env配置）
+    MIN_SEGMENT_DURATION: float = 2.0  # 最短片段时长（秒）（符合CLAUDE.md规范）
+    MAX_SEGMENT_DURATION: float = 8.0  # 最长片段时长（秒）符合CLAUDE.md规范
 
     # 语义搜索配置
     VECTOR_DIMENSION: int = 1024  # text-embedding-v4 维度

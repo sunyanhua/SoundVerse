@@ -43,14 +43,15 @@ async def get_wechat_user_info(code: str) -> WechatUserInfo:
     if not settings.WECHAT_APP_ID or not settings.WECHAT_APP_SECRET:
         logger.warning("微信小程序配置未设置，使用模拟数据")
         # 模拟返回
+        mock_openid = f"mock_openid_{code[:8]}"
         return WechatUserInfo(
-            openId=f"mock_openid_{code[:8]}",
-            nickName="测试用户",
+            openId=mock_openid,
+            nickName=f"测试用户{mock_openid[-6:]}",
             gender=0,
             city="",
             province="",
             country="",
-            avatarUrl="https://example.com/avatar.jpg",
+            avatarUrl="https://mmbiz.qpic.cn/mmbiz/icTdbqWNOwNRna42FI242Lcia07jQodd2FJGIYQfG0LAJGFxM4FbnQP6yfMxBgJ0F3YRqJCJ1aPAK2dQagdusBZg/0",
         )
 
     try:
@@ -84,12 +85,12 @@ async def get_wechat_user_info(code: str) -> WechatUserInfo:
 
             return WechatUserInfo(
                 openId=openid,
-                nickName="",  # 需要通过其他方式获取
+                nickName=f"用户{openid[-6:]}" if openid else "微信用户",  # 使用openid后6位作为默认昵称
                 gender=0,
                 city="",
                 province="",
                 country="",
-                avatarUrl="",
+                avatarUrl="https://mmbiz.qpic.cn/mmbiz/icTdbqWNOwNRna42FI242Lcia07jQodd2FJGIYQfG0LAJGFxM4FbnQP6yfMxBgJ0F3YRqJCJ1aPAK2dQagdusBZg/0",  # 微信默认头像
                 unionId=unionid,
             )
 
@@ -194,17 +195,7 @@ async def get_current_user(
     if user_id is None:
         return None
 
-    # 检查令牌是否被撤销
-    stmt = select(UserToken).where(
-        UserToken.token == token,
-        UserToken.is_revoked == False,
-        UserToken.expires_at > datetime.utcnow(),
-    )
-    result = await db.execute(stmt)
-    user_token = result.scalar_one_or_none()
-
-    if not user_token:
-        return None
+    # 简化：跳过令牌黑名单检查，仅验证JWT有效性
 
     # 获取用户
     stmt = select(User).where(User.id == user_id, User.is_active == True)

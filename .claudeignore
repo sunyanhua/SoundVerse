@@ -14,3 +14,10 @@ backend/__pycache__/
 *.wav
 *.m4a
 *.zip
+
+Audit_Report/
+cc_output_*.txt
+project_butler_debug_*.log
+BUTLER_STATE.json
+TASK_REPORT.json
+HISTORY.md

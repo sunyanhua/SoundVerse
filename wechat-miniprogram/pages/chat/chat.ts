@@ -861,7 +861,7 @@ Page({
           format: 'mp3',
           sample_rate: '16000',
         },
-      });
+      }) as any;
 
       if (response.statusCode === 200) {
         const result = JSON.parse(response.data);

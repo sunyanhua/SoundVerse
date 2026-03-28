@@ -1,9 +1,11 @@
 // app.ts
+import { getBaseUrl } from './config';
+
 App<IAppOption>({
   globalData: {
     userInfo: null,
     token: null,
-    baseUrl: 'https://api.soundverse.example.com' // 替换为实际后端地址
+    baseUrl: getBaseUrl() // 动态获取
   },
 
   onLaunch() {

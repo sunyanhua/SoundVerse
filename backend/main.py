@@ -2,8 +2,12 @@
 SoundVerse 后端服务主入口
 """
 import logging
+import datetime
 from contextlib import asynccontextmanager
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+import redis.asyncio as redis
+import shared.database.session as db_session
+from sqlalchemy import text
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -111,13 +115,47 @@ def create_app() -> FastAPI:
 
     # 添加健康检查端点
     @app.get("/health")
+    @app.get("/api/health")
     async def health_check() -> Dict[str, Any]:
         """健康检查端点"""
-        return {
-            "status": "healthy",
+        from fastapi.responses import JSONResponse
+
+        checks = {}
+        status_code = 200
+
+        # 检查数据库连接
+        try:
+            if db_session.engine is None:
+                raise RuntimeError("Database engine not initialized")
+            async with db_session.engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            checks["database"] = "healthy"
+        except Exception as e:
+            checks["database"] = f"unhealthy: {str(e)}"
+            status_code = 503
+
+        # 检查Redis连接
+        try:
+            redis_client = redis.Redis.from_url(settings.get_redis_url())
+            await redis_client.ping()
+            checks["redis"] = "healthy"
+            await redis_client.close()
+        except Exception as e:
+            checks["redis"] = f"unhealthy: {str(e)}"
+            status_code = 503
+
+        # 总体状态
+        overall_status = "healthy" if status_code == 200 else "unhealthy"
+
+        response_data = {
+            "status": overall_status,
             "service": "soundverse-backend",
             "version": "1.0.0",
+            "checks": checks,
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z"
         }
+
+        return JSONResponse(content=response_data, status_code=status_code)
 
     @app.get("/")
     async def root():

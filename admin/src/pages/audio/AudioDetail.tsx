@@ -246,7 +246,7 @@ const AudioDetail = () => {
                 {audio.emotion || '未设置'}
               </Descriptions.Item>
               <Descriptions.Item label="情感得分">
-                {audio.sentiment_score !== null ? audio.sentiment_score.toFixed(2) : '未设置'}
+                {audio.sentiment_score != null ? audio.sentiment_score.toFixed(2) : '未设置'}
               </Descriptions.Item>
               <Descriptions.Item label="关键词">
                 {audio.keywords?.join(', ') || '无'}

@@ -1,9 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
 // app.ts
+const config_1 = require("./config");
 App({
     globalData: {
         userInfo: null,
         token: null,
-        baseUrl: 'https://api.soundverse.example.com' // 替换为实际后端地址
+        baseUrl: (0, config_1.getBaseUrl)() // 动态获取
     },
     onLaunch() {
         // 初始化时获取本地存储的用户信息

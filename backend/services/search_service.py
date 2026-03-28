@@ -1,8 +1,8 @@
 """
 搜索服务 - 向量检索
 """
+import json
 import logging
-import pickle
 from pathlib import Path
 from typing import List, Tuple, Optional, Union
 import numpy as np
@@ -25,7 +25,7 @@ class VectorSearchService:
         self.segment_ids = []
         self.vector_dimension = settings.VECTOR_DIMENSION
         self.index_path = Path(settings.FAISS_INDEX_PATH)
-        self.metadata_path = self.index_path.with_suffix('.pkl')
+        self.metadata_path = self.index_path.with_suffix('.json')
         self.initialized = False  # 初始化标志
 
         # DashVector配置
@@ -78,8 +78,8 @@ class VectorSearchService:
             self.index = faiss.read_index(str(self.index_path))
 
             # 加载元数据
-            with open(self.metadata_path, 'rb') as f:
-                metadata = pickle.load(f)
+            with open(self.metadata_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
                 self.segment_ids = metadata.get('segment_ids', [])
 
         except Exception as e:
@@ -100,8 +100,8 @@ class VectorSearchService:
                 'vector_dimension': self.vector_dimension,
             }
 
-            with open(self.metadata_path, 'wb') as f:
-                pickle.dump(metadata, f)
+            with open(self.metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
 
         except Exception as e:
             logger.error(f"保存索引失败: {str(e)}")

@@ -1,0 +1,9 @@
+我们要通过阿里云 SLB 部署项目，不需要本地 Nginx 容器。请帮我优化根目录的 docker-compose.yml：
+移除 Nginx 服务：如果有 Nginx 服务定义，请删除。
+暴露端口：确保 api 服务暴露 8000:8000，admin 服务暴露 5173:5173。
+生产环境环境变量：创建一个 .env.prod 文件，内容如下：
+COMPOSE_PROJECT_NAME=SoundVerse
+DATABASE_URL=mysql+asyncmy://soundverse:SoundVerse2026!@SoundVerse-mysql:3306/soundverse
+CORS_ORIGINS=["https://soundverse.vbegin.com.cn"]
+DEBUG=False
+检查 Admin 配置：由于 SLB 已经根据 /api 路径转发了，请确保 admin 里的前端请求地址改为相对路径或正确的生产域名。

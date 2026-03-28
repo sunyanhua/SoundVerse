@@ -1,357 +1,135 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件为 SoundVerse 项目提供核心指引，请在使用 Claude Code 时参考。保持内容简洁、可操作。
 
-## Project Overview
+## 项目概览
 
-SoundVerse (听听·原声态) is an AI-powered "sound encyclopedia + social audio library" WeChat mini-program project. The project reconstructs radio programs into granular audio segments using AI technology, establishes a sound library, and enables intelligent audio interaction and generation.
+SoundVerse（听听·原声态）是北京广电音频媒资 AI 活化项目。核心目标：AI 重构广播节目为颗粒化音频片段，建立声音库，支持智能交互与生成。
 
-### Project Structure
+### 当前项目结构
 ```
 SoundVerse/
-├── wechat-miniprogram/          # WeChat mini-program frontend
-│   ├── src/pages/              # Pages (index, chat, generate, upload, profile)
-│   ├── src/components/         # Reusable components (audio-player, etc.)
-│   ├── src/services/           # API services and business logic
-│   ├── src/stores/             # State management
-│   ├── src/utils/              # Utility functions
-│   └── src/types/              # TypeScript type definitions
-├── backend/                    # Python backend service
-│   ├── api/v1/                 # API routes (auth, audio, chat, generate)
-│   ├── services/               # Business services
-│   ├── shared/                 # Shared code
-│   │   ├── database/          # Database models and session
-│   │   ├── models/            # SQLAlchemy models
-│   │   ├── schemas/           # Pydantic schemas
-│   │   └── utils/             # Utilities and logging
-│   ├── ai-models/             # AI service integrations
-│   ├── infrastructure/        # Infrastructure configs
-│   ├── scripts/               # Development and deployment scripts
-│   └── tests/                 # Test files
-└── CLAUDE.md                  # This file - project guidance
+├── wechat-miniprogram/          # 微信小程序前端 (TypeScript, Vant Weapp)
+├── backend/                     # Python 后端 (FastAPI, MySQL, Redis, Celery)
+├── admin/                       # React 管理后台 (已容器化，运行于 5173 端口)
+└── CLAUDE.md                    # 本文件
 ```
 
-### Core Technologies
-- **Frontend**: WeChat mini-program (TypeScript, Vant Weapp)
-- **Backend**: FastAPI (Python 3.11+), SQLAlchemy, Celery, Redis
-- **Database**: MySQL, FAISS for vector search
-- **AI Services**: Alibaba Cloud ASR/TTS/NLP APIs
-- **Storage**: Alibaba Cloud OSS
-- **Containerization**: Docker, Docker Compose
+## 环境与启动
 
-## Development Environment
-
-### Python Version
-Check for `.python-version`, `pyproject.toml`, or `runtime.txt` to determine the required Python version. If none exist, assume Python 3.11+.
-
-### Dependency Management
-- Look for `pyproject.toml`, `requirements.txt`, `Pipfile`, `poetry.lock`, or `uv.lock` to identify the package manager.
-- If using **Poetry**: `poetry install` to install dependencies, `poetry run` to execute commands.
-- If using **UV**: `uv sync` to install dependencies.
-- If using **pip**: `pip install -r requirements.txt` or `pip install -e .` for editable installs.
-- If no dependency manager is configured, suggest adding one.
-
-### Virtual Environment
-A virtual environment is recommended. Look for `.venv`, `venv`, `env`, or `.pixi` directories. If none exist, create one with `python -m venv .venv` and activate it.
-
-### WeChat Mini-program Development
-- **Development Tool**: WeChat Developer Tools (required)
-- **Package Manager**: npm (Node.js required)
-- **Build Tool**: TypeScript compiler (tsc)
-- **UI Framework**: Vant Weapp component library
-- **To install dependencies**: `cd wechat-miniprogram && npm install`
-- **To build**: `npm run build` or use WeChat Developer Tools build feature
-
-## Common Development Tasks
-
-### Backend Development
-
-#### Starting Development Environment
+### Docker 开发环境（全容器化）
 ```bash
 cd backend
-chmod +x scripts/start_dev.sh
-./scripts/start_dev.sh
+docker-compose up -d              # 启动所有服务 (api, admin, mysql, redis)
+docker-compose ps                 # 查看服务状态
+docker-compose logs -f api        # 查看 API 日志
+docker-compose down               # 停止所有服务
+docker-compose up -d --build      # 重新构建并启动
 ```
 
-#### Installing Dependencies
+### 后端开发
 ```bash
 cd backend
-# Using pip (recommended for development)
-pip install -e ".[dev]"
-
-# Or using the Docker development environment
-docker-compose build api
+pip install -e ".[dev]"           # 安装依赖（开发模式）
+python -m scripts.start_dev.sh    # 启动开发环境
+alembic upgrade head              # 执行数据库迁移
+pytest                            # 运行测试（待实现）
 ```
 
-#### Running Tests
-- Tests are not yet implemented. When added:
-  - Run tests: `pytest`
-  - Run specific test: `pytest tests/test_auth.py -v`
-  - Run with coverage: `pytest --cov=backend tests/`
-
-#### Linting and Formatting
-- **Black** (formatting): `black .`
-- **Ruff** (linting): `ruff check .` or `ruff check . --fix`
-- Both are configured in `pyproject.toml`
-
-#### Type Checking
-- **mypy**: `mypy .` (configured in `pyproject.toml`)
-- Type checking is strict - fix all type errors before committing
-
-#### Database Migrations
-- **Alembic** is configured but migrations are not yet created
-- Create migration: `alembic revision --autogenerate -m "description"`
-- Apply migration: `alembic upgrade head`
-
-### Frontend Development (WeChat Mini-program)
-
-#### Installing Dependencies
+### 微信小程序
 ```bash
 cd wechat-miniprogram
-npm install
+npm install                       # 安装依赖
+npm run build                     # 构建 TypeScript
+# 使用微信开发者工具进行预览、调试、上传
 ```
 
-#### Building and Development
-- **Development**: Use WeChat Developer Tools for live preview
-- **Build TypeScript**: `npm run build`
-- **Watch mode**: `npm run watch`
-- **Linting**: `npm run lint` (ESLint configured)
-- **Formatting**: `npm run format` (Prettier configured)
-
-#### WeChat Developer Tools
-1. Open WeChat Developer Tools
-2. Import project from `wechat-miniprogram/` directory
-3. Configure AppID in `project.config.json`
-4. Use built-in preview, debug, and upload features
-
-### Docker Development
-
-#### Starting Services
+### 批量操作脚本
 ```bash
 cd backend
-docker-compose up -d  # Start all services
-docker-compose ps     # Check service status
-docker-compose logs -f api  # View API logs
+python -m scripts.mass_ingest      # 批量音频入库
+python -m scripts.sync_dashvector  # 同步向量到 DashVector
+python -m scripts.audit_db         # 数据库完整性审计
 ```
 
-#### Stopping Services
+### 数据库备份与恢复
 ```bash
-cd backend
-docker-compose down  # Stop and remove containers
-docker-compose down -v  # Also remove volumes (data will be lost)
+# 备份
+docker exec SoundVerse-mysql mysqldump -u soundverse -ppassword soundverse > backup.sql
+
+# 恢复
+docker exec -i SoundVerse-mysql mysql -u soundverse -ppassword soundverse < backup.sql
 ```
 
-#### Rebuilding Services
-```bash
-cd backend
-docker-compose up -d --build  # Rebuild and restart
-```
+## 核心业务规则（不可变真理）
 
-### API Documentation
-- Start backend services
-- Access Swagger UI: http://localhost:8000/docs
-- Access ReDoc: http://localhost:8000/redoc
-- Health check: http://localhost:8000/health
-- Metrics: http://localhost:8000/metrics (Prometheus format)
+### 音频处理规则
+- **硬切时长**：音频片段严格限制在 **2‑8 秒**（`MIN_SEGMENT_DURATION=2.0`, `MAX_SEGMENT_DURATION=8.0`）
+- **采样率**：16kHz 单声道（`AUDIO_SAMPLE_RATE=16000`, `AUDIO_CHANNELS=1`）
+- **静音检测**：`MIN_SILENCE_LEN=500ms`, `SILENCE_THRESH=-40dB`
 
-## Project Structure (Current)
+### 向量与语义搜索配置
+- **向量维度**：V4 文本嵌入维度为 **1024**（`VECTOR_DIMENSION=1024`）
+- **语义相似度门槛**：`SIMILARITY_THRESHOLD=0.25`（基础匹配门槛）
+- **音频回复门槛**（配置于 `.env`）：
+  - `AUDIO_REPLY_THRESHOLD=0.55`（直接播放）
+  - `AUDIO_SUGGEST_THRESHOLD=0.35`（建议播放）
+- **搜索候选数**：`SEARCH_TOP_K=5`（每次搜索返回5个候选）
 
-The project follows a multi-repo structure within a single repository:
+### 容器命名规范
+- 所有 Docker 容器均以 `SoundVerse-` 开头（例如 `SoundVerse-api`, `SoundVerse-admin`）
+- Docker 网络：`SoundVerse-network`
+- Admin 前端访问地址：`http://localhost:5173`（通过 nginx 反向代理至后端 API）
 
-### Backend (Python)
-- `backend/` - Main backend service directory
-  - `main.py` - FastAPI application entry point
-  - `config.py` - Configuration management
-  - `pyproject.toml` - Python project configuration and dependencies
-  - `docker-compose.yml` - Docker development environment
-  - `api/v1/` - API routes organized by version
-  - `services/` - Business logic services
-  - `shared/` - Shared database models, schemas, utilities
-  - `ai-models/` - AI service integrations (ASR, TTS, NLP)
-  - `infrastructure/` - Deployment and monitoring configs
-  - `scripts/` - Development and deployment scripts
-  - `tests/` - Test files (to be implemented)
+## 代码规范
 
-### Frontend (WeChat Mini-program)
-- `wechat-miniprogram/` - WeChat mini-program frontend
-  - `src/pages/` - Mini-program pages
-  - `src/components/` - Reusable components
-  - `src/services/` - API services and business logic
-  - `src/stores/` - State management (if needed)
-  - `src/utils/` - Utility functions
-  - `src/types/` - TypeScript type definitions
-  - `app.json` - Mini-program configuration
-  - `app.ts` - Mini-program entry point
-  - `package.json` - npm dependencies
+### 目录结构约定
+- `backend/api/v1/`：API 路由（认证、音频、聊天、生成）
+- `backend/services/`：业务逻辑服务
+- `backend/shared/`：数据库模型、数据模式、工具函数
+- `backend/ai‑models/`：AI 服务集成
+- `backend/scripts/`：运维脚本
+- `wechat‑miniprogram/src/pages/`：小程序页面
+- `wechat‑miniprogram/src/services/`：前端 API 服务
+- `admin/src/pages/`：管理后台页面
 
-### Key Development Patterns
-- **Backend**: Follows FastAPI patterns with dependency injection
-- **Database**: SQLAlchemy async ORM with Alembic for migrations
-- **API**: RESTful design with OpenAPI documentation
-- **Frontend**: Component-based architecture with TypeScript
-- **AI Integration**: Alibaba Cloud APIs with local caching and fallbacks
+### 命名规范
+- **Python**：变量/函数使用 snake_case，类使用 PascalCase
+- **TypeScript**：变量/函数使用 camelCase，组件/接口使用 PascalCase
+- **数据库表名**：复数 snake_case（例如 `audio_segments`, `chat_sessions`）
+- **API 端点**：RESTful，kebab‑case（例如 `/api/v1/audio‑segments`）
 
-## Configuration Files
+### 开发实践
+- **类型提示**：所有 Python 函数必须添加类型提示
+- **错误处理**：使用结构化日志，绝不暴露内部错误信息
+- **配置管理**：仅使用环境变量，绝不硬编码密钥
+- **依赖管理**：后端通过 `pyproject.toml`，前端通过 `package.json`
 
-### Backend Configuration
-- `backend/pyproject.toml` – Python project configuration, dependencies, and tool settings (black, ruff, mypy)
-- `backend/.env.example` – Environment variable template (copy to `.env` for local development)
-- `backend/docker-compose.yml` – Docker development environment
-- `backend/Dockerfile.dev` – Development Dockerfile
+## 重要说明
 
-### Frontend Configuration
-- `wechat-miniprogram/project.config.json` – WeChat Developer Tools project configuration
-- `wechat-miniprogram/app.json` – Mini-program global configuration
-- `wechat-miniprogram/tsconfig.json` – TypeScript compiler configuration
-- `wechat-miniprogram/package.json` – npm dependencies and scripts
+### 管理后台（Admin）
+- 已容器化，通过 nginx 反向代理连接后端 API
+- 前端 API 请求路径为 `/api/` → 代理至 `api:8000`
+- 技术栈：React + TypeScript + Ant Design
+- Docker Compose 运行时可访问 `http://localhost:5173`
 
-### Key Environment Variables (Backend)
-- `DATABASE_URL` – MySQL database connection string
-- `REDIS_URL` – Redis connection string
-- `ALIYUN_ACCESS_KEY_ID` – Alibaba Cloud API access key
-- `ALIYUN_ACCESS_KEY_SECRET` – Alibaba Cloud API secret key
-- `WECHAT_APP_ID` – WeChat mini-program AppID
-- `WECHAT_APP_SECRET` – WeChat mini-program AppSecret
+### 微信集成
+- 使用官方微信登录流程
+- AppID 与 AppSecret 配置于 `.env`
+- 用户令牌通过 Redis 缓存安全存储
 
-**Important**: Never commit `.env` files with secrets to version control.
+### AI 服务集成
+- 阿里云 ASR 用于语音转文本
+- DashScope（V4 模型）用于文本嵌入生成
+- 向量搜索通过 DashVector 或 FAISS 实现
+- 已实现速率限制与缓存机制
 
-## Git Hooks
+### 监控与日志
+- Prometheus 指标端点：`/metrics`
+- 健康检查端点：`/health`
+- 结构化日志，支持日志级别配置
+- Grafana 监控服务已在 docker‑compose 中注释（可选）
 
-### Pre-commit Hooks
-Pre-commit hooks are configured for backend development:
-- Install: `pre-commit install` (in backend directory)
-- Run manually: `pre-commit run --all-files`
-- Hooks include: black, ruff, mypy, and other code quality checks
+---
 
-### Commit Message Convention
-Follow conventional commits format:
-- `feat:` New feature
-- `fix:` Bug fix
-- `docs:` Documentation changes
-- `style:` Code style changes (formatting, etc.)
-- `refactor:` Code refactoring
-- `test:` Test-related changes
-- `chore:` Maintenance tasks
-
-Example: `feat(auth): add WeChat login support`
-
-## CI/CD
-
-### Backend CI/CD (Planned)
-- GitHub Actions workflows will be added in `.github/workflows/`
-- Automated testing on pull requests
-- Docker image building and pushing
-- Deployment to staging/production environments
-
-### Frontend Deployment
-- WeChat mini-programs are deployed via WeChat Developer Tools
-- Development, trial, and production environments in WeChat platform
-- Version management through WeChat mini-program backend
-
-### Environment Strategy
-1. **Development**: Local Docker environment
-2. **Staging**: Test environment with real cloud services
-3. **Production**: Production deployment with monitoring and alerts
-
-## Monitoring and Observability
-
-### Backend Monitoring
-- Prometheus metrics exposed at `/metrics`
-- Structured logging with log levels
-- Health check endpoint at `/health`
-- Performance monitoring planned (APM tools)
-
-### Error Tracking
-- Application errors are logged with context
-- User-facing error messages are friendly
-- Technical details are logged for debugging
-
-## Security Considerations
-
-### API Security
-- JWT token authentication
-- Rate limiting on sensitive endpoints
-- CORS configured for specific origins
-- Input validation with Pydantic
-
-### Data Security
-- Database connection pooling with SSL
-- Redis with authentication
-- Environment variables for secrets
-- Regular dependency updates for security patches
-
-### WeChat Mini-program Security
-- Official WeChat login flow
-- Secure storage of user tokens
-- Content moderation for user-generated content
-- Privacy policy compliance
-
-## Cursor / Copilot Rules
-
-If `.cursor/rules/` or `.cursorrules` exist, incorporate those guidelines. Similarly for `.github/copilot-instructions.md`. Currently none are present.
-
-## Notes
-
-### Current Project Status (March 2026)
-The project has been initialized with the complete technical implementation plan. The following has been implemented:
-
-#### ✅ Completed
-1. **Project structure** - Complete directory organization for both backend and frontend
-2. **Backend foundation** - FastAPI application with configuration management
-3. **Database models** - SQLAlchemy models for users, audio, chat sessions
-4. **API endpoints** - Basic endpoints for authentication, audio, chat, and generation
-5. **Service layer** - Business logic services with proper separation
-6. **AI integration** - NLP service structure with Alibaba Cloud integration pattern
-7. **WeChat mini-program** - Basic structure with TypeScript, components, and services
-8. **Development environment** - Docker Compose setup for local development
-9. **Documentation** - README and CLAUDE.md updated with project guidance
-
-#### 🔄 In Progress / To Be Implemented
-1. **Database migrations** - Alembic migration scripts
-2. **AI service implementation** - Actual Alibaba Cloud API integration
-3. **Audio processing** - Actual audio segmentation and processing logic
-4. **Vector search** - FAISS index population and search optimization
-5. **WeChat login** - Actual WeChat API integration
-6. **Testing** - Unit and integration tests
-7. **Frontend pages** - Complete implementation of all mini-program pages
-8. **Deployment scripts** - Production deployment configuration
-
-### Development Priorities (MVP Phase)
-1. **Core chat functionality** - Text-to-audio matching and playback
-2. **User authentication** - WeChat login integration
-3. **Basic audio generation** - Template-based audio generation
-4. **Audio upload and processing** - User audio upload and basic processing
-5. **Performance optimization** - Caching, indexing, and API optimization
-
-### Dependencies and Requirements
-- **Alibaba Cloud account** with ASR, TTS, NLP, OSS, RDS, Redis services
-- **WeChat mini-program account** with AppID and AppSecret
-- **Development tools**: Docker, Python 3.11+, Node.js, WeChat Developer Tools
-- **Team skills**: Python (FastAPI), TypeScript, WeChat mini-program development, AI/ML basics
-
-### Cost Management
-- **Development phase**: < 500 RMB/month (free tiers and development resources)
-- **MVP phase**: < 2000 RMB/month (carefully managed API calls)
-- **Growth phase**: Implement user quotas, premium features, monetization
-
-### Next Steps for Development Team
-1. Set up Alibaba Cloud services and obtain API credentials
-2. Configure WeChat mini-program in WeChat platform
-3. Implement database migrations and populate with test data
-4. Complete AI service integrations (ASR, TTS, NLP)
-5. Develop core chat interface in WeChat mini-program
-6. Test end-to-end flow and iterate based on feedback
-
-### Best Practices to Follow
-- Always use type hints in Python code
-- Write tests for new functionality
-- Follow the established project structure
-- Update documentation when making changes
-- Use environment variables for configuration
-- Implement proper error handling and logging
-- Consider security implications of all changes
-
-### Contact and Support
-- Technical issues: Check documentation first, then create GitHub issues
-- Development questions: Review code structure and existing implementations
-- Feature requests: Discuss with product team before implementation
+**最后更新**：2026‑03‑22

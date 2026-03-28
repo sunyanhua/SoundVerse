@@ -12,6 +12,7 @@
     "navigationBarTitleText": "听听·原声态",
     "navigationBarTextStyle": "black"
   },
+  "lazyCodeLoading": "requiredComponents",
   "tabBar": {
     "color": "#999999",
     "selectedColor": "#FF6B6B",

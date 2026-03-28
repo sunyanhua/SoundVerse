@@ -1,9 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.checkLogin = exports.handleApiError = exports.uploadFile = exports.del = exports.put = exports.post = exports.get = exports.request = void 0;
+const config_1 = require("../config");
 // 开发环境API地址（请根据实际情况修改为您的局域网IP）
 // 例如：http://192.168.1.100:8000
-const BASE_URL = 'http://192.168.1.133:8000'; // 开发环境API地址
 // const BASE_URL = 'https://api.soundverse.example.com'; // 生产环境API地址
 // 获取请求头
 function getHeaders(withAuth = true) {
@@ -65,7 +65,7 @@ async function request(options) {
     }
     try {
         // 处理查询参数
-        let requestUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
+        let requestUrl = url.startsWith('http') ? url : `${(0, config_1.getBaseUrl)()}${url}`;
         if (params) {
             const queryParams = [];
             Object.entries(params).forEach(([key, value]) => {
@@ -147,7 +147,7 @@ async function uploadFile(url, filePath, formData, options) {
     try {
         const response = await new Promise((resolve, reject) => {
             wx.uploadFile({
-                url: url.startsWith('http') ? url : `${BASE_URL}${url}`,
+                url: url.startsWith('http') ? url : `${(0, config_1.getBaseUrl)()}${url}`,
                 filePath,
                 name: 'file',
                 formData: formData || {},

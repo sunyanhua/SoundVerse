@@ -132,10 +132,10 @@ const Dashboard = () => {
                 • 前往 <a href="/audio">音频管理</a> 查看所有音频片段
               </Paragraph>
               <Paragraph>
-                • 检查 <a href="http://localhost:8000/docs" target="_blank" rel="noreferrer">API 文档</a>
+                • 检查 <a href="/docs" target="_blank" rel="noreferrer">API 文档</a>
               </Paragraph>
               <Paragraph>
-                • 查看 <a href="http://localhost:3000" target="_blank" rel="noreferrer">Grafana 监控</a>
+                • 查看 <a href="#" onClick={() => alert('Grafana监控已禁用')}>Grafana 监控</a>
               </Paragraph>
               <Paragraph>
                 • 数据库审计已完成 ({stats.totalAudio} 个音频片段)

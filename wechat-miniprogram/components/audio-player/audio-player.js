@@ -77,7 +77,6 @@ Component({
         // 生命周期函数
         attached() {
             this.initAudioContext();
-
             // 组件挂载后检查是否需要自动播放
             if (this.properties.audioUrl && this.properties.autoplay && this.data.audioContext) {
                 // 延迟播放以确保音频已加载

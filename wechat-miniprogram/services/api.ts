@@ -1,9 +1,9 @@
 // API请求封装
 import type { RequestOptions, ApiResponse } from '../types/api';
+import { getBaseUrl } from '../config';
 
 // 开发环境API地址（请根据实际情况修改为您的局域网IP）
 // 例如：http://192.168.1.100:8000
-const BASE_URL = 'http://192.168.1.133:8000'; // 开发环境API地址
 // const BASE_URL = 'https://api.soundverse.example.com'; // 生产环境API地址
 
 // 获取请求头
@@ -85,7 +85,7 @@ export async function request<T>(
 
   try {
     // 处理查询参数
-    let requestUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
+    let requestUrl = url.startsWith('http') ? url : `${getBaseUrl()}${url}`;
 
     if (params) {
       const queryParams: string[] = [];
@@ -217,7 +217,7 @@ export async function uploadFile(
   try {
     const response = await new Promise<any>((resolve, reject) => {
       wx.uploadFile({
-        url: url.startsWith('http') ? url : `${BASE_URL}${url}`,
+        url: url.startsWith('http') ? url : `${getBaseUrl()}${url}`,
         filePath,
         name: 'file',
         formData: formData || {},

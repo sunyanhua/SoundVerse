@@ -1,6 +1,4 @@
 {
   "status": "IDLE",
-  "last_result": "SUCCESS",
-  "completed_tasks": 5,
-  "total_tasks": 5
+  "last_result": "SUCCESS"
 }

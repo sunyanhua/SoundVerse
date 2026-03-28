@@ -91,7 +91,8 @@ Page({
                     success: (res) => {
                         if (res.statusCode === 200) {
                             resolve(res.data);
-                        } else {
+                        }
+                        else {
                             reject(new Error(`API请求失败: ${res.statusCode}`));
                         }
                     },
@@ -100,7 +101,6 @@ Page({
                     },
                 });
             });
-
             // 映射API响应到前端格式
             const audios = response.map((item) => ({
                 id: item.id,
@@ -112,14 +112,14 @@ Page({
                 coverUrl: 'https://picsum.photos/200/200?random=' + Math.floor(Math.random() * 100),
                 audioUrl: item.oss_url || '',
             }));
-
             this.setData({
                 recommendedAudios: audios,
                 isLoading: false,
             });
-
-            if (callback) callback();
-        } catch (error) {
+            if (callback)
+                callback();
+        }
+        catch (error) {
             console.error('加载推荐音频失败:', error);
             wx.showToast({
                 title: '加载失败',
@@ -152,13 +152,12 @@ Page({
                     audioUrl: 'https://example.com/audio3.mp3',
                 },
             ];
-
             this.setData({
                 recommendedAudios: mockAudios,
                 isLoading: false,
             });
-
-            if (callback) callback();
+            if (callback)
+                callback();
         }
     },
     /**
@@ -230,7 +229,6 @@ Page({
             showAudioPreview: true,
         });
     },
-
     /**
      * 关闭音频预览弹窗
      */
@@ -239,7 +237,6 @@ Page({
             showAudioPreview: false,
         });
     },
-
     /**
      * 音频收藏事件处理
      */
@@ -250,7 +247,6 @@ Page({
             icon: 'success',
         });
     },
-
     /**
      * 音频分享事件处理
      */
@@ -260,7 +256,6 @@ Page({
             icon: 'none',
         });
     },
-
     /**
      * 音频下载事件处理
      */
@@ -270,14 +265,12 @@ Page({
             icon: 'none',
         });
     },
-
     /**
      * 音频播放结束事件处理
      */
     onAudioEnded() {
         console.log('音频播放结束');
     },
-
     /**
      * 音频播放错误事件处理
      */

@@ -1,0 +1,60 @@
+<view class="container">
+  <view class="section">
+    <view class="title">当前环境信息</view>
+    <view wx:if="{{envInfo}}">
+      <view class="info-item">
+        <text class="label">环境：</text>
+        <text class="value">{{envInfo.currentEnv}}</text>
+      </view>
+      <view class="info-item">
+        <text class="label">描述：</text>
+        <text class="value">{{envInfo.description}}</text>
+      </view>
+      <view class="info-item">
+        <text class="label">API地址：</text>
+        <text class="value">{{envInfo.baseUrl}}</text>
+      </view>
+      <view class="info-item">
+        <text class="label">手动设置：</text>
+        <text class="value">{{envInfo.isManual ? '是' : '否'}}</text>
+      </view>
+      <view class="info-item">
+        <text class="label">自定义本地URL：</text>
+        <text class="value">{{envInfo.isCustomLocalUrl ? '是' : '否'}}</text>
+      </view>
+    </view>
+    <view wx:else>
+      <text>加载中...</text>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="title">手动环境切换</view>
+    <view class="button-group">
+      <button type="primary" size="mini" bindtap="switchToLocal">切换到Local</button>
+      <button type="primary" size="mini" bindtap="switchToDev">切换到Dev</button>
+      <button type="primary" size="mini" bindtap="switchToProd">切换到Prod</button>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="title">自定义Local环境URL</view>
+    <view class="input-group">
+      <input
+        placeholder="输入本地API地址，如 http://192.168.1.100:8000"
+        value="{{customLocalUrl}}"
+        bindinput="onCustomLocalUrlInput"
+      />
+      <button type="primary" size="mini" bindtap="setCustomLocalUrl">设置</button>
+      <button type="default" size="mini" bindtap="clearCustomLocalUrl">清除</button>
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="title">操作</view>
+    <view class="button-group">
+      <button type="primary" bindtap="testApiConnection">测试API连接</button>
+      <button type="default" bindtap="clearManual">恢复自动检测</button>
+    </view>
+  </view>
+</view>
