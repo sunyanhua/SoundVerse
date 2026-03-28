@@ -1,4 +1,5 @@
 // 首页逻辑
+const { resolveAudioUrl, getBaseUrl } = require('../../config');
 Page({
     /**
      * 页面的初始数据
@@ -80,7 +81,7 @@ Page({
             // 调用真实API获取推荐音频
             const response = await new Promise((resolve, reject) => {
                 wx.request({
-                    url: 'http://localhost:8000/api/v1/audio/recommended',
+                    url: getBaseUrl() + '/api/v1/audio/recommended',
                     method: 'GET',
                     data: {
                         limit: 10,
@@ -110,7 +111,7 @@ Page({
                 duration: Math.round(item.duration || 0),
                 tags: item.tags && item.tags.length > 0 ? item.tags.slice(0, 3) : ['音频'],
                 coverUrl: 'https://picsum.photos/200/200?random=' + Math.floor(Math.random() * 100),
-                audioUrl: item.oss_url || '',
+                audioUrl: resolveAudioUrl(item.oss_url || ''),
             }));
             this.setData({
                 recommendedAudios: audios,

@@ -10,7 +10,7 @@ exports.FORCE_PROD = true;
 // 生产环境配置
 exports.PROD_CONFIG = {
     name: 'prod',
-    baseUrl: 'https://soundverse.vbegin.com.cn/api',
+    baseUrl: 'https://soundverse.vbegin.com.cn',
     description: '强制生产环境'
 };
 // 获取当前环境的BASE_URL

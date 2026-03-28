@@ -9,7 +9,7 @@ export const FORCE_PROD = true;
 // 生产环境配置
 export const PROD_CONFIG = {
   name: 'prod' as const,
-  baseUrl: 'https://soundverse.vbegin.com.cn/api', // 生产环境API地址
+  baseUrl: 'https://soundverse.vbegin.com.cn', // 生产环境API地址
   description: '强制生产环境'
 };
 
