@@ -1,0 +1,81 @@
+{
+  "timestamp": "2026-03-15T08:35:25.609241",
+  "total_sources": 5,
+  "completed_sources": 5,
+  "incomplete_sources": 0,
+  "problematic_sources": 0,
+  "incomplete_details": [],
+  "problematic_details": [],
+  "all_stats": [
+    {
+      "source_id": "0963d2be-6c64-47dc-9642-e293a42ad6fb",
+      "title": "《欢乐正前方》20110718期：飞机的故事",
+      "original_filename": "《欢乐正前方》20110718期：飞机的故事.mp3",
+      "source_duration": 1505.14,
+      "segment_count": 155,
+      "total_segment_duration": 1302.3499994277954,
+      "avg_segment_duration": 8.402258060824487,
+      "expected_segments": 200,
+      "coverage": 0.8652683467503324,
+      "processing_status": "completed",
+      "processing_progress": 1.0,
+      "error_message": null
+    },
+    {
+      "source_id": "72958f6d-de9d-4164-856e-a96298fe89b8",
+      "title": "《娱乐72变》20250906期：办公！在高铁上！",
+      "original_filename": "《娱乐72变》20250906期：办公！在高铁上！.m4a",
+      "source_duration": 1773.33,
+      "segment_count": 354,
+      "total_segment_duration": 3082.1190004348755,
+      "avg_segment_duration": 8.706550848686089,
+      "expected_segments": 236,
+      "coverage": 1.7380402973134585,
+      "processing_status": "completed",
+      "processing_progress": 1.0,
+      "error_message": null
+    },
+    {
+      "source_id": "92829a71-b747-42f6-b112-d5450ac383c4",
+      "title": "《大城小事》20250908期：许过的已成真的愿望",
+      "original_filename": "《大城小事》20250908期：许过的已成真的愿望.m4a",
+      "source_duration": 5730.03,
+      "segment_count": 987,
+      "total_segment_duration": 8103.7500076293945,
+      "avg_segment_duration": 8.210486329918332,
+      "expected_segments": 764,
+      "coverage": 1.4142596125376996,
+      "processing_status": "completed",
+      "processing_progress": 1.0,
+      "error_message": null
+    },
+    {
+      "source_id": "a860a432-8df1-4390-a32c-eb84d028cb3e",
+      "title": "《一路畅通》20250814期：又怂又爱玩",
+      "original_filename": "《一路畅通》20250814期：又怂又爱玩.m4a",
+      "source_duration": 6946.37,
+      "segment_count": 1304,
+      "total_segment_duration": 11248.036013126373,
+      "avg_segment_duration": 8.625794488593845,
+      "expected_segments": 926,
+      "coverage": 1.6192681952050314,
+      "processing_status": "completed",
+      "processing_progress": 1.0,
+      "error_message": null
+    },
+    {
+      "source_id": "cf663d39-8bce-435e-8c9b-64023e007de7",
+      "title": "《行走天下》20250908期：天下看点：王兴兴机器人IPO冒险；桃李致歉；奶茶变“浓”；霸王茶姬掉队？",
+      "original_filename": "《行走天下》20250908期：天下看点：王兴兴机器人IPO冒险；桃李致歉；奶茶变“浓”；霸王茶姬掉队？.m4a",
+      "source_duration": 3808.6,
+      "segment_count": 649,
+      "total_segment_duration": 5070.970010757446,
+      "avg_segment_duration": 7.813513113647837,
+      "expected_segments": 507,
+      "coverage": 1.3314525050563057,
+      "processing_status": "completed",
+      "processing_progress": 1.0,
+      "error_message": null
+    }
+  ]
+}

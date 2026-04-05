@@ -1,0 +1,67 @@
+{
+  "timestamp": "2026-03-12T11:53:34.830773",
+  "scan_directory": "/app/storage/raw_media",
+  "total_files_scanned": 5,
+  "successful_files": 1,
+  "skipped_files": 4,
+  "failed_files": 0,
+  "segments_created": 1234,
+  "segments_total": 1250,
+  "stats_before": {
+    "total_sources": 5,
+    "total_segments": 1136,
+    "approved_segments": 1136
+  },
+  "stats_after": {
+    "total_sources": 6,
+    "total_segments": 2370,
+    "approved_segments": 2370
+  },
+  "dry_run": false,
+  "results": [
+    {
+      "file": "/app/storage/raw_media/《一路畅通》20250814期：又怂又爱玩.m4a",
+      "success": true,
+      "source_id": "093cd5b3-2070-4789-8539-15f80e863c2d",
+      "segments_created": 1234,
+      "segments_total": 1250,
+      "error": null
+    },
+    {
+      "file": "/app/storage/raw_media/《大城小事》20250908期：许过的已成真的愿望.m4a",
+      "success": true,
+      "source_id": "2b93db37-5820-4368-91c9-9dd94aaba26a",
+      "segments_created": 0,
+      "segments_total": 0,
+      "error": null,
+      "message": "文件已处理，跳过"
+    },
+    {
+      "file": "/app/storage/raw_media/《娱乐72变》20250906期：办公！在高铁上！.m4a",
+      "success": true,
+      "source_id": "1d9ff4db-61ab-4872-99cb-89a6abb06d82",
+      "segments_created": 0,
+      "segments_total": 0,
+      "error": null,
+      "message": "文件已处理，跳过"
+    },
+    {
+      "file": "/app/storage/raw_media/《欢乐正前方》20110718期：飞机的故事.mp3",
+      "success": true,
+      "source_id": "530e613a-c072-464b-8097-53dec3fa3d33",
+      "segments_created": 0,
+      "segments_total": 0,
+      "error": null,
+      "message": "文件已处理，跳过"
+    },
+    {
+      "file": "/app/storage/raw_media/《行走天下》20250908期：天下看点：王兴兴机器人IPO冒险；桃李致歉；奶茶变“浓”；霸王茶姬掉队？.m4a",
+      "success": true,
+      "source_id": "22802276-d86b-4418-afc5-3103f5c8e31f",
+      "segments_created": 0,
+      "segments_total": 0,
+      "error": null,
+      "message": "文件已处理，跳过"
+    }
+  ]
+}

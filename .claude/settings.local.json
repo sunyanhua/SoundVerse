@@ -22,7 +22,16 @@
       "Bash(npm list:*)",
       "Bash(pip list:*)",
       "Bash(npm install:*)",
-      "Bash(npm audit:*)"
+      "Bash(npm audit:*)",
+      "Bash(ls -la *.md)",
+      "Bash(mv:*)",
+      "Bash(npm run:*)",
+      "Bash(uvicorn main:app --reload)",
+      "Bash(docker volume:*)",
+      "Bash(uvicorn main:app --reload --host 0.0.0.0 --port 8000)",
+      "Bash(ls -la *.md *.txt)",
+      "Bash(mv backend/storage/ingestion_results_*.json test/data/fixtures/)",
+      "Bash(mv backend/storage/integrity_audit_*.json test/data/fixtures/)"
     ]
   }
 }
