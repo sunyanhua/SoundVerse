@@ -203,3 +203,52 @@ class ShareAudioResponse(BaseModel):
     share_url: str
     qr_code_url: Optional[str] = None
     short_url: Optional[str] = None
+
+
+class PresetPromptBase(BaseModel):
+    """预置提示词基础模型"""
+    query_text: str = Field(..., min_length=1, max_length=1000)
+    category: Optional[str] = Field(None, max_length=50)
+    emotion: Optional[str] = Field(None, max_length=50)
+    tags: Optional[List[str]] = None
+
+
+class PresetPromptCreate(PresetPromptBase):
+    """预置提示词创建模型"""
+    original_message_id: Optional[str] = None
+
+
+class PresetPromptUpdate(BaseModel):
+    """预置提示词更新模型"""
+    category: Optional[str] = None
+    emotion: Optional[str] = None
+    tags: Optional[List[str]] = None
+    review_status: Optional[str] = Field(None, pattern="^(pending|approved|rejected)$")
+
+
+class PresetPromptInDB(PresetPromptBase):
+    """数据库中的预置提示词模型"""
+    id: str
+    user_id: str
+    original_message_id: Optional[str] = None
+    use_count: int = 0
+    like_count: int = 1
+    review_status: str = "pending"
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PresetPromptResponse(PresetPromptInDB):
+    """预置提示词响应模型"""
+    user_nickname: Optional[str] = None
+
+
+class LikeRequest(BaseModel):
+    """点赞请求模型"""
+    like: bool = True
+    save_as_preset: bool = False
+    category: Optional[str] = Field(None, max_length=50)
+    tags: Optional[List[str]] = None

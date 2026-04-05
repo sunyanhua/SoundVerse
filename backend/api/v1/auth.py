@@ -36,8 +36,16 @@ async def get_current_active_user(
     token: str = Depends(oauth2_scheme),
 ) -> User:
     """
-    获取当前认证用户
+    获取当前认证用户，根据AUTH_MODE配置决定认证策略：
+    - demo模式：返回模拟用户（忽略token）
+    - jwt模式：要求有效的JWT token，否则抛出401异常
     """
+    # demo模式：直接返回模拟用户
+    if settings.AUTH_MODE == "demo":
+        logger.info("demo模式：使用模拟用户")
+        return await get_or_create_mock_user(db)
+
+    # jwt模式：要求有效的JWT token
     user = await get_current_user(db, token)
     if not user:
         raise HTTPException(
@@ -52,8 +60,16 @@ async def get_current_user_optional(
     token: Optional[str] = Depends(oauth2_scheme),
 ) -> Optional[User]:
     """
-    获取当前用户（可选）
+    获取当前用户（可选），根据AUTH_MODE配置决定认证策略：
+    - demo模式：返回模拟用户
+    - jwt模式：尝试认证，失败则返回None
     """
+    # demo模式：直接返回模拟用户
+    if settings.AUTH_MODE == "demo":
+        logger.info("demo模式：使用模拟用户（可选认证）")
+        return await get_or_create_mock_user(db)
+
+    # jwt模式：尝试认证，失败则返回None
     try:
         user = await get_current_user(db, token)
         return user
@@ -162,3 +178,67 @@ async def test_auth(
         "user_id": current_user.id,
         "nickname": current_user.nickname,
     }
+
+
+# 辅助函数：获取或创建模拟用户
+async def get_or_create_mock_user(db: AsyncSession) -> User:
+    """
+    获取或创建模拟用户
+    """
+    from sqlalchemy import select
+    from datetime import datetime
+
+    MOCK_USER_ID = "demo-user-001"
+
+    try:
+        # 尝试从数据库获取模拟用户
+        result = await db.execute(select(User).where(User.id == MOCK_USER_ID))
+        existing_user = result.scalar_one_or_none()
+
+        if existing_user:
+            return existing_user
+
+        # 创建模拟用户
+        mock_user = User(
+            id=MOCK_USER_ID,
+            wechat_openid=f"mock-wechat-{MOCK_USER_ID}",
+            nickname="模拟用户",
+            avatar_url="https://example.com/avatar.jpg",
+            is_active=True,
+            is_premium=False,
+            is_admin=False,
+            daily_chat_count=0,
+            daily_generate_count=0,
+            total_chat_count=0,
+            total_generate_count=0,
+            preferred_voice="default",
+            preferred_language="zh-CN",
+            notification_enabled=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+        db.add(mock_user)
+        await db.commit()
+        await db.refresh(mock_user)
+        return mock_user
+    except Exception as e:
+        logger.error(f"数据库操作失败，使用纯模拟用户: {e}")
+        # 返回一个不依赖于数据库的模拟用户
+        return User(
+            id=MOCK_USER_ID,
+            wechat_openid=f"mock-wechat-{MOCK_USER_ID}",
+            nickname="模拟用户",
+            avatar_url="https://example.com/avatar.jpg",
+            is_active=True,
+            is_premium=False,
+            is_admin=False,
+            daily_chat_count=0,
+            daily_generate_count=0,
+            total_chat_count=0,
+            total_generate_count=0,
+            preferred_voice="default",
+            preferred_language="zh-CN",
+            notification_enabled=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )

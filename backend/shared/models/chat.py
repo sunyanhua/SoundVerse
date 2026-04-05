@@ -177,3 +177,43 @@ class GeneratedAudio(Base):
     def increment_download_count(self) -> None:
         """增加下载计数"""
         self.download_count += 1
+
+
+class PresetPrompt(Base):
+    """
+    预置提示词表（点赞保存）
+    """
+    __tablename__ = "preset_prompts"
+
+    # 基础信息
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String(36), ForeignKey("users.id"), index=True, nullable=False)
+    original_message_id = Column(String(36), ForeignKey("chat_messages.id"), nullable=True)
+
+    # 提示词内容
+    query_text = Column(Text, nullable=False)  # 用户原始查询
+    category = Column(String(50), nullable=True)  # 分类（对话、音乐、学习等）
+    emotion = Column(String(50), nullable=True)  # 情感标签
+    tags = Column(JSON, nullable=True)  # 标签数组
+
+    # 使用统计
+    use_count = Column(Integer, default=0)  # 被使用次数
+    like_count = Column(Integer, default=1)  # 点赞次数（默认1）
+
+    # 审核状态
+    review_status = Column(
+        String(20),
+        default="pending",  # pending, approved, rejected
+        nullable=False
+    )
+
+    # 时间戳
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # 关系
+    user = relationship("User")
+    original_message = relationship("ChatMessage")
+
+    def __repr__(self) -> str:
+        return f"<PresetPrompt(id={self.id}, query='{self.query_text[:50]}...')>"

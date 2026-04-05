@@ -13,6 +13,7 @@ import os
 
 from shared.database.session import get_db
 from shared.models.user import User
+from shared.models.chat import PresetPrompt, ChatMessage
 from shared.schemas.chat import (
     ChatMessageCreate,
     ChatResponse,
@@ -20,6 +21,9 @@ from shared.schemas.chat import (
     ChatHistoryRequest,
     ChatHistoryResponse,
     ChatMessageUpdate,
+    PresetPromptCreate,
+    PresetPromptResponse,
+    LikeRequest,
 )
 from services.chat_service import (
     process_chat_message,
@@ -45,33 +49,36 @@ optional_oauth2_scheme = OAuth2PasswordBearer(
 )
 
 
-# 开发模式下的模拟用户依赖
+# 模拟用户依赖，支持demo模式和jwt模式
 async def get_current_user_or_mock(
     db: AsyncSession = Depends(get_db),
     token: Optional[str] = Depends(optional_oauth2_scheme),
 ) -> User:
     """
-    获取当前用户，开发模式下返回模拟用户，生产模式下尝试认证，失败则返回模拟用户
+    获取当前用户，根据AUTH_MODE配置决定认证策略：
+    - demo模式：直接返回模拟用户
+    - jwt模式：尝试JWT认证，失败则返回模拟用户
     """
-    # 开发模式下直接返回模拟用户
-    if settings.DEBUG:
-        logger.warning("开发模式：使用模拟用户")
+    # 固定模拟用户ID
+    MOCK_USER_ID = "demo-user-001"
+
+    # 根据认证模式处理
+    if settings.AUTH_MODE == "demo":
+        logger.info(f"demo模式：使用模拟用户 (ID: {MOCK_USER_ID})")
         try:
-            # 尝试从数据库获取一个用户，如果没有则创建
+            # 尝试从数据库获取模拟用户
             from sqlalchemy import select
-            result = await db.execute(select(User).limit(1))
+            result = await db.execute(select(User).where(User.id == MOCK_USER_ID))
             existing_user = result.scalar_one_or_none()
 
             if existing_user:
                 return existing_user
 
-            # 创建测试用户
-            from uuid import uuid4
-            user_id = str(uuid4())
-            test_user = User(
-                id=user_id,
-                wechat_openid=f"dev-wechat-{user_id}",
-                nickname="测试用户",
+            # 创建模拟用户
+            mock_user = User(
+                id=MOCK_USER_ID,
+                wechat_openid=f"mock-wechat-{MOCK_USER_ID}",
+                nickname="模拟用户",
                 avatar_url="https://example.com/avatar.jpg",
                 is_active=True,
                 is_premium=False,
@@ -86,19 +93,17 @@ async def get_current_user_or_mock(
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
             )
-            db.add(test_user)
+            db.add(mock_user)
             await db.commit()
-            await db.refresh(test_user)
-            return test_user
+            await db.refresh(mock_user)
+            return mock_user
         except Exception as e:
             logger.error(f"数据库操作失败，使用纯模拟用户: {e}")
             # 返回一个不依赖于数据库的模拟用户
-            from uuid import uuid4
-            user_id = str(uuid4())
             return User(
-                id=user_id,
-                wechat_openid=f"dev-wechat-{user_id}",
-                nickname="测试用户",
+                id=MOCK_USER_ID,
+                wechat_openid=f"mock-wechat-{MOCK_USER_ID}",
+                nickname="模拟用户",
                 avatar_url="https://example.com/avatar.jpg",
                 is_active=True,
                 is_premium=False,
@@ -114,90 +119,74 @@ async def get_current_user_or_mock(
                 updated_at=datetime.utcnow(),
             )
 
-    # 生产模式：尝试认证，如果失败则使用模拟用户（从数据库获取或创建）
-    if token:
-        # 有token，尝试认证
+    # jwt模式：尝试认证，如果失败则使用模拟用户
+    else:  # settings.AUTH_MODE == "jwt"
+        if token:
+            # 有token，尝试认证
+            try:
+                from services.user_service import get_current_user
+                user = await get_current_user(db, token)
+                if user:
+                    return user
+                else:
+                    logger.warning("jwt模式：token无效，使用模拟用户")
+            except Exception as e:
+                logger.error(f"jwt模式：认证过程中出错，使用模拟用户: {e}")
+        else:
+            logger.warning("jwt模式：未提供token，使用模拟用户")
+
+        # 使用模拟用户（与demo模式相同的逻辑）
         try:
-            from services.user_service import get_current_user
-            user = await get_current_user(db, token)
-            if user:
-                return user
-            else:
-                logger.warning("生产模式：token无效，使用模拟用户")
-                # token无效，继续使用模拟用户逻辑
+            from sqlalchemy import select
+            result = await db.execute(select(User).where(User.id == MOCK_USER_ID))
+            existing_user = result.scalar_one_or_none()
+
+            if existing_user:
+                return existing_user
+
+            # 创建模拟用户
+            mock_user = User(
+                id=MOCK_USER_ID,
+                wechat_openid=f"mock-wechat-{MOCK_USER_ID}",
+                nickname="模拟用户",
+                avatar_url="https://example.com/avatar.jpg",
+                is_active=True,
+                is_premium=False,
+                is_admin=False,
+                daily_chat_count=0,
+                daily_generate_count=0,
+                total_chat_count=0,
+                total_generate_count=0,
+                preferred_voice="default",
+                preferred_language="zh-CN",
+                notification_enabled=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+            db.add(mock_user)
+            await db.commit()
+            await db.refresh(mock_user)
+            return mock_user
         except Exception as e:
-            logger.error(f"生产模式：认证过程中出错，使用模拟用户: {e}")
-            # 出错时继续使用模拟用户逻辑
-    else:
-        logger.warning("生产模式：未提供token，使用模拟用户")
-
-    # 模拟用户逻辑：尝试从数据库获取一个用户，如果没有则创建
-    try:
-        # 尝试从数据库获取一个用户（优先获取非模拟用户）
-        from sqlalchemy import select
-        result = await db.execute(select(User).order_by(User.created_at.desc()).limit(1))
-        existing_user = result.scalar_one_or_none()
-
-        if existing_user:
-            # 检查是否已经是模拟用户（根据wechat_openid前缀）
-            if existing_user.wechat_openid and existing_user.wechat_openid.startswith("dev-wechat-"):
-                # 这是开发模拟用户，可以返回
-                return existing_user
-            elif existing_user.wechat_openid and existing_user.wechat_openid.startswith("prod-mock-"):
-                # 这是生产模拟用户，可以返回
-                return existing_user
-            else:
-                # 真实用户，也返回（可能是第一个注册用户）
-                return existing_user
-
-        # 创建模拟用户
-        from uuid import uuid4
-        user_id = str(uuid4())
-        mock_user = User(
-            id=user_id,
-            wechat_openid=f"prod-mock-{user_id}",
-            nickname="模拟用户",
-            avatar_url="https://example.com/avatar.jpg",
-            is_active=True,
-            is_premium=False,
-            is_admin=False,
-            daily_chat_count=0,
-            daily_generate_count=0,
-            total_chat_count=0,
-            total_generate_count=0,
-            preferred_voice="default",
-            preferred_language="zh-CN",
-            notification_enabled=True,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
-        db.add(mock_user)
-        await db.commit()
-        await db.refresh(mock_user)
-        return mock_user
-    except Exception as e:
-        logger.error(f"生产模式：数据库操作失败，使用纯模拟用户: {e}")
-        # 返回一个不依赖于数据库的模拟用户
-        from uuid import uuid4
-        user_id = str(uuid4())
-        return User(
-            id=user_id,
-            wechat_openid=f"prod-mock-{user_id}",
-            nickname="模拟用户",
-            avatar_url="https://example.com/avatar.jpg",
-            is_active=True,
-            is_premium=False,
-            is_admin=False,
-            daily_chat_count=0,
-            daily_generate_count=0,
-            total_chat_count=0,
-            total_generate_count=0,
-            preferred_voice="default",
-            preferred_language="zh-CN",
-            notification_enabled=True,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-        )
+            logger.error(f"jwt模式：数据库操作失败，使用纯模拟用户: {e}")
+            return User(
+                id=MOCK_USER_ID,
+                wechat_openid=f"mock-wechat-{MOCK_USER_ID}",
+                nickname="模拟用户",
+                avatar_url="https://example.com/avatar.jpg",
+                is_active=True,
+                is_premium=False,
+                is_admin=False,
+                daily_chat_count=0,
+                daily_generate_count=0,
+                total_chat_count=0,
+                total_generate_count=0,
+                preferred_voice="default",
+                preferred_language="zh-CN",
+                notification_enabled=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
 
 
 @router.post("/message", response_model=ChatResponse)
@@ -549,4 +538,218 @@ async def process_voice_message(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="处理语音消息失败",
+        )
+
+
+@router.post("/preset-prompts", response_model=PresetPromptResponse)
+async def create_preset_prompt(
+    request: PresetPromptCreate,
+    current_user: User = Depends(get_current_user_or_mock),
+    db: AsyncSession = Depends(get_db),
+) -> PresetPromptResponse:
+    """
+    创建预置提示词（点赞保存）
+    """
+    try:
+        from sqlalchemy import select
+
+        # 检查原始消息是否存在（如果提供了original_message_id）
+        original_message = None
+        if request.original_message_id:
+            result = await db.execute(
+                select(ChatMessage).where(ChatMessage.id == request.original_message_id)
+            )
+            original_message = result.scalar_one_or_none()
+            if not original_message:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="原始消息不存在",
+                )
+
+        # 创建预置提示词
+        preset_prompt = PresetPrompt(
+            user_id=current_user.id,
+            original_message_id=request.original_message_id,
+            query_text=request.query_text,
+            category=request.category,
+            emotion=request.emotion,
+            tags=request.tags or [],
+            use_count=0,
+            like_count=1,
+            review_status="pending",
+        )
+
+        db.add(preset_prompt)
+        await db.commit()
+        await db.refresh(preset_prompt)
+
+        # 转换为响应模型
+        return PresetPromptResponse(
+            id=preset_prompt.id,
+            user_id=preset_prompt.user_id,
+            original_message_id=preset_prompt.original_message_id,
+            query_text=preset_prompt.query_text,
+            category=preset_prompt.category,
+            emotion=preset_prompt.emotion,
+            tags=preset_prompt.tags,
+            use_count=preset_prompt.use_count,
+            like_count=preset_prompt.like_count,
+            review_status=preset_prompt.review_status,
+            created_at=preset_prompt.created_at,
+            updated_at=preset_prompt.updated_at,
+            user_nickname=current_user.nickname,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"创建预置提示词失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="创建预置提示词失败",
+        )
+
+
+@router.get("/preset-prompts/random", response_model=List[PresetPromptResponse])
+async def get_random_preset_prompts(
+    count: int = 3,
+    category: Optional[str] = None,
+    current_user: User = Depends(get_current_user_or_mock),
+    db: AsyncSession = Depends(get_db),
+) -> List[PresetPromptResponse]:
+    """
+    获取随机预置提示词
+    """
+    try:
+        from sqlalchemy import select, func
+
+        # 构建查询
+        query = select(PresetPrompt).where(PresetPrompt.review_status == "approved")
+
+        if category:
+            query = query.where(PresetPrompt.category == category)
+
+        # 随机排序并限制数量
+        query = query.order_by(func.random()).limit(count)
+
+        result = await db.execute(query)
+        preset_prompts = result.scalars().all()
+
+        # 转换为响应模型列表
+        responses = []
+        for prompt in preset_prompts:
+            # 获取用户昵称
+            from shared.models.user import User
+            user_result = await db.execute(
+                select(User).where(User.id == prompt.user_id)
+            )
+            user = user_result.scalar_one_or_none()
+
+            responses.append(
+                PresetPromptResponse(
+                    id=prompt.id,
+                    user_id=prompt.user_id,
+                    original_message_id=prompt.original_message_id,
+                    query_text=prompt.query_text,
+                    category=prompt.category,
+                    emotion=prompt.emotion,
+                    tags=prompt.tags,
+                    use_count=prompt.use_count,
+                    like_count=prompt.like_count,
+                    review_status=prompt.review_status,
+                    created_at=prompt.created_at,
+                    updated_at=prompt.updated_at,
+                    user_nickname=user.nickname if user else None,
+                )
+            )
+
+        return responses
+
+    except Exception as e:
+        logger.error(f"获取随机预置提示词失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取随机预置提示词失败",
+        )
+
+
+@router.put("/messages/{message_id}/like")
+async def like_message(
+    message_id: str,
+    request: LikeRequest,
+    current_user: User = Depends(get_current_user_or_mock),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    点赞消息并可选保存为预设提示词
+    """
+    try:
+        from sqlalchemy import select
+
+        # 查找消息
+        result = await db.execute(
+            select(ChatMessage).where(ChatMessage.id == message_id)
+        )
+        message = result.scalar_one_or_none()
+
+        if not message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="消息不存在",
+            )
+
+        # 更新消息的点赞状态
+        if request.like:
+            message.set_feedback("like", "用户点赞")
+        else:
+            message.set_feedback(None, None)  # 取消点赞
+
+        # 如果用户选择保存为预设提示词
+        if request.like and request.save_as_preset:
+            # 检查是否已存在相同的预设提示词
+            existing_result = await db.execute(
+                select(PresetPrompt).where(
+                    PresetPrompt.original_message_id == message_id,
+                    PresetPrompt.user_id == current_user.id,
+                )
+            )
+            existing_prompt = existing_result.scalar_one_or_none()
+
+            if not existing_prompt:
+                # 创建新的预设提示词
+                preset_prompt = PresetPrompt(
+                    user_id=current_user.id,
+                    original_message_id=message_id,
+                    query_text=message.content,
+                    category=request.category,
+                    emotion=None,  # 可以从消息中提取情感，这里暂时留空
+                    tags=request.tags or [],
+                    use_count=0,
+                    like_count=1,
+                    review_status="pending",
+                )
+                db.add(preset_prompt)
+            else:
+                # 更新现有预设提示词的分类和标签
+                if request.category:
+                    existing_prompt.category = request.category
+                if request.tags:
+                    existing_prompt.tags = request.tags
+                existing_prompt.like_count += 1
+
+        await db.commit()
+
+        return {
+            "message": "操作成功",
+            "liked": request.like,
+            "saved_as_preset": request.like and request.save_as_preset,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"点赞消息失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="点赞消息失败",
         )
