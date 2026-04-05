@@ -17,7 +17,12 @@
       "Bash(find /d/GitHub/SoundVerse -name *.env* -o -name *.config.* -o -name config.* -type f)",
       "Bash(find \"D:\\\\GitHub\\\\SoundVerse\\\\backend\" -name \"*.py\" -type f ! -path \"*/.venv/*\" ! -path \"*/__pycache__/*\" -exec grep -l \"uvicorn\\\\|main:app\" {})",
       "Bash(curl -s http://localhost:8000/health)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(pip show:*)",
+      "Bash(npm list:*)",
+      "Bash(pip list:*)",
+      "Bash(npm install:*)",
+      "Bash(npm audit:*)"
     ]
   }
 }
