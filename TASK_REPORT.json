@@ -3,16 +3,31 @@
   "tasks": [
     {
       "index": 1,
-      "content": "1.1 在项目根目录下创建一个空白文件 test.txt",
-      "status": "SUCCESS"
+      "content": "1.1 添加PresetPrompt模型和数据库迁移",
+      "status": "RUNNING"
     },
     {
       "index": 2,
-      "content": "1.2 删除项目根目录下的空白文件 test.txt",
-      "status": "SUCCESS"
+      "content": "1.2 实现点赞保存API端点",
+      "status": "WAITING"
+    },
+    {
+      "index": 3,
+      "content": "1.3 修改默认认证为模拟用户",
+      "status": "WAITING"
+    },
+    {
+      "index": 4,
+      "content": "1.4 优化API路径前缀",
+      "status": "WAITING"
+    },
+    {
+      "index": 5,
+      "content": "1.5 后端功能测试",
+      "status": "WAITING"
     }
   ],
-  "total": 2,
-  "status": "VERIFYING",
-  "created": "2026-04-01 06:46:53"
+  "total": 5,
+  "status": "WAITING",
+  "created": "2026-04-05 21:42:00"
 }

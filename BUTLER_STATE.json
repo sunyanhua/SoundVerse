@@ -1,4 +1,6 @@
 {
-  "status": "COMPLETED",
-  "round": 4
+  "status": "RUNNING",
+  "task_index": 1,
+  "current_task": "1.1 添加PresetPrompt模型和数据库迁移",
+  "attempt": 1
 }

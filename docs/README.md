@@ -7,6 +7,8 @@
 | 类别 | 路径 | 说明 |
 |------|------|------|
 | 文档管理制度 | [DOCUMENT_MANAGEMENT.md](./DOCUMENT_MANAGEMENT.md) | 文档管理规范 |
+| 测试管理制度 | [TEST_MANAGEMENT.md](./TEST_MANAGEMENT.md) | 测试管理规范 |
+| 变更日志 | [CHANGELOG.md](./CHANGELOG.md) | 版本变更记录 |
 | 任务清单 | [tasks/](./tasks/) | 各版本任务清单 |
 | 质检报告 | [Audit_Report/](./Audit_Report/) | 管家质检报告 |
 | 后端文档 | [backend/](./backend/) | 后端相关文档 |
@@ -30,6 +32,9 @@
 
 ### 后端文档 (backend/)
 - [PROGRESS_ARCHIVE.md](./backend/PROGRESS_ARCHIVE.md) - 历史进度归档
+
+### 变更日志 (CHANGELOG.md)
+- [CHANGELOG.md](./CHANGELOG.md) - 项目版本变更历史
 
 ## 新增文档流程
 
