@@ -270,6 +270,7 @@ test_*.py
 debug_*.py
 *_test.py
 *_debug.py
+backend/test.db
 
 # 临时文件
 *.tmp
