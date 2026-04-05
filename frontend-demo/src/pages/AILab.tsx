@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles, Lightbulb, RefreshCw } from 'lucide-react';
-import { supabase, Conversation } from '../lib/supabase';
+import { Send, Sparkles, Lightbulb, RefreshCw, Heart } from 'lucide-react';
+import { api, Conversation } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import AudioPlayer from '../components/AudioPlayer';
 
@@ -32,7 +32,7 @@ const mockResponses = [
   },
 ];
 
-const allPromptSuggestions = [
+const fallbackPrompts = [
   '分享一段你今天的见闻',
   '描述一下你最近的心情',
   '推荐一个你喜欢的地方',
@@ -47,26 +47,43 @@ const allPromptSuggestions = [
   '分享你的健身心得',
 ];
 
+interface PresetPrompt {
+  id: string;
+  query_text: string;
+  category?: string;
+}
+
 export default function AILab() {
   const { user } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
+  const [likedMessages, setLikedMessages] = useState<Set<string>>(new Set());
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const shufflePrompts = () => {
-    const shuffled = [...allPromptSuggestions].sort(() => 0.5 - Math.random());
+  const shuffleLocalPrompts = () => {
+    const shuffled = [...fallbackPrompts].sort(() => 0.5 - Math.random());
     setPromptSuggestions(shuffled.slice(0, 6));
   };
 
-  useEffect(() => {
-    shufflePrompts();
-  }, []);
+  const fetchRandomPrompts = async () => {
+    try {
+      const prompts = await api.get<PresetPrompt[]>('/chat/preset-prompts/random?count=6');
+      if (prompts && prompts.length > 0) {
+        setPromptSuggestions(prompts.map(p => p.query_text));
+      } else {
+        shuffleLocalPrompts();
+      }
+    } catch {
+      shuffleLocalPrompts();
+    }
+  };
 
   useEffect(() => {
-    loadConversations();
-  }, [user]);
+    fetchRandomPrompts();
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
@@ -76,60 +93,82 @@ export default function AILab() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const loadConversations = async () => {
-    if (!user) return;
-
-    const { data, error } = await supabase
-      .from('conversations')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      console.error('Error loading conversations:', error);
-    } else {
-      setConversations(data || []);
-    }
-  };
-
   const sendMessage = async (message: string) => {
     if (!message.trim() || !user) return;
 
-    const { data: userData, error: userError } = await supabase.from('conversations').insert({
+    const userMsg: Conversation = {
+      id: `local-${Date.now()}`,
       user_id: user.id,
       role: 'user',
       content: message,
-    }).select();
+      created_at: new Date().toISOString(),
+    };
 
-    if (userError) {
-      console.error('Error saving user message:', userError);
-      return;
-    }
-
-    if (userData) {
-      setConversations(prev => [...prev, userData[0]]);
-    }
-
+    setConversations(prev => [...prev, userMsg]);
     setInputText('');
     setLoading(true);
 
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+      const response = await api.post<{
+        message_id: string;
+        content: string;
+        session_id: string;
+      }>('/chat/message', {
+        content: message,
+        session_id: sessionId,
+      });
 
-    const randomResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)];
+      if (response.session_id && !sessionId) {
+        setSessionId(response.session_id);
+      }
 
-    const { data: assistantData, error: assistantError } = await supabase.from('conversations').insert({
-      user_id: user.id,
-      role: 'assistant',
-      content: randomResponse.text,
-    }).select();
+      const assistantMsg: Conversation = {
+        id: response.message_id || `local-${Date.now()}-resp`,
+        user_id: 'assistant',
+        role: 'assistant',
+        content: response.content,
+        created_at: new Date().toISOString(),
+      };
 
-    if (assistantError) {
-      console.error('Error saving assistant message:', assistantError);
-    } else if (assistantData) {
-      setConversations(prev => [...prev, assistantData[0]]);
+      setConversations(prev => [...prev, assistantMsg]);
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      const randomResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)];
+      const assistantMsg: Conversation = {
+        id: `local-${Date.now()}-resp`,
+        user_id: 'assistant',
+        role: 'assistant',
+        content: randomResponse.text,
+        created_at: new Date().toISOString(),
+      };
+      setConversations(prev => [...prev, assistantMsg]);
     }
 
     setLoading(false);
+  };
+
+  const handleLike = async (messageId: string) => {
+    const isLiked = likedMessages.has(messageId);
+    const newLiked = new Set(likedMessages);
+
+    if (isLiked) {
+      newLiked.delete(messageId);
+    } else {
+      newLiked.add(messageId);
+    }
+    setLikedMessages(newLiked);
+
+    try {
+      await api.put(`/chat/messages/${messageId}/like`, {
+        like: !isLiked,
+        save_as_preset: !isLiked,
+      });
+      if (!isLiked) {
+        fetchRandomPrompts();
+      }
+    } catch {
+      // 静默失败，本地状态已更新
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -167,7 +206,7 @@ export default function AILab() {
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-medium text-gray-700">推荐话题</h4>
                   <button
-                    onClick={shufflePrompts}
+                    onClick={fetchRandomPrompts}
                     className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 transition-colors"
                   >
                     <RefreshCw className="w-4 h-4" />
@@ -209,6 +248,17 @@ export default function AILab() {
                         title="AI 语音回复"
                         duration={mockResponses[Math.floor(Math.random() * mockResponses.length)].duration}
                       />
+                      <button
+                        onClick={() => handleLike(conv.id)}
+                        className={`mt-2 flex items-center gap-1 text-sm transition-colors ${
+                          likedMessages.has(conv.id)
+                            ? 'text-red-500'
+                            : 'text-gray-400 hover:text-red-400'
+                        }`}
+                      >
+                        <Heart className={`w-4 h-4 ${likedMessages.has(conv.id) ? 'fill-current' : ''}`} />
+                        {likedMessages.has(conv.id) ? '已收藏' : '收藏'}
+                      </button>
                     </div>
                   ) : (
                     <p>{conv.content}</p>
@@ -259,7 +309,7 @@ export default function AILab() {
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-xs text-gray-500">快速话题</span>
                 <button
-                  onClick={shufflePrompts}
+                  onClick={fetchRandomPrompts}
                   disabled={loading}
                   className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 transition-colors disabled:opacity-50"
                 >

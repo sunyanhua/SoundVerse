@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Search, Filter, Tag, Clock, Trash2 } from 'lucide-react';
-import { supabase, AudioClip } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
+import { api, AudioClip } from '../lib/api';
 import AudioPlayer from '../components/AudioPlayer';
 
 export default function Library() {
-  const { user } = useAuth();
   const [clips, setClips] = useState<AudioClip[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -17,22 +15,16 @@ export default function Library() {
 
   useEffect(() => {
     loadClips();
-  }, [user]);
+  }, []);
 
   const loadClips = async () => {
-    if (!user) return;
-
     setLoading(true);
-    const { data, error } = await supabase
-      .from('audio_clips')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error loading clips:', error);
-    } else {
+    try {
+      const data = await api.get<AudioClip[]>('/audio/segments');
       setClips(data || []);
+    } catch (error) {
+      console.error('Error loading clips:', error);
+      setClips([]);
     }
     setLoading(false);
   };
@@ -40,15 +32,11 @@ export default function Library() {
   const deleteClip = async (id: string) => {
     if (!confirm('确定要删除这条语弹吗？')) return;
 
-    const { error } = await supabase
-      .from('audio_clips')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error('Error deleting clip:', error);
-    } else {
+    try {
+      await api.delete(`/audio/favorite/${id}`);
       setClips(clips.filter(clip => clip.id !== id));
+    } catch (error) {
+      console.error('Error deleting clip:', error);
     }
   };
 

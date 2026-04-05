@@ -30,6 +30,8 @@
    - 认证头管理（暂为空）
 3. 删除或重命名原supabase.ts文件
 
+**状态**: ✅ **2026-04-05**: Supabase依赖已移除，axios已安装
+
 ### 任务2.2：配置环境变量和API代理
 **文件**: `frontend-demo/.env` 和 `frontend-demo/.env.example`
 **描述**: 配置API基地址和环境变量
@@ -49,7 +51,12 @@
 2. 参考2.0DEMO版最终执行方案第702-721行
 3. 确保开发时前端可通过相对路径访问API
 
+**状态**: ✅ **2026-04-05**: 环境变量和Vite代理配置完成
+
 ### 任务2.3：修改认证组件为免认证模式
+**状态**: ✅ **2026-04-05**: AuthContext.tsx 已重写为免认证模拟用户模式
+
+
 **文件**: `frontend-demo/src/components/Auth.tsx`
 **描述**: 修改认证组件，支持免登录直接使用
 **具体步骤**：
@@ -66,6 +73,9 @@
 3. 保持原有的接口类型，确保其他组件兼容
 
 ### 任务2.4：更新音频工坊页面API调用
+**状态**: ✅ **2026-04-05**: UploadStudio.tsx 已替换Supabase调用为FastAPI上传
+
+
 **文件**: `frontend-demo/src/pages/UploadStudio.tsx`
 **描述**: 替换Supabase存储调用为FastAPI音频上传
 **具体步骤**：
@@ -78,6 +88,9 @@
 4. 更新相关的TypeScript类型定义
 
 ### 任务2.5：更新语弹库页面API调用
+**状态**: ✅ **2026-04-05**: Library.tsx 已替换Supabase查询为FastAPI调用
+
+
 **文件**: `frontend-demo/src/pages/Library.tsx`
 **描述**: 替换Supabase数据库调用为FastAPI查询
 **具体步骤**：
@@ -87,6 +100,9 @@
 4. 更新数据结构和错误处理
 
 ### 任务2.6：实现AI实验室点赞保存功能
+**状态**: ✅ **2026-04-05**: AILab.tsx 已实现点赞保存和随机提示词功能，替换Supabase
+
+
 **文件**: `frontend-demo/src/pages/AILab.tsx`
 **描述**: 实现点赞保存和随机提示词功能
 **具体步骤**：
@@ -106,6 +122,9 @@
    - 保持原有的消息流和界面反馈
 
 ### 任务2.7：更新其他组件和工具函数
+**状态**: ✅ **2026-04-05**: 全局搜索确认无残余Supabase引用
+
+
 **文件**: 全局搜索Supabase引用
 **描述**: 查找并替换所有Supabase相关调用
 **具体步骤**：
