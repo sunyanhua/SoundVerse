@@ -220,6 +220,7 @@ __marimo__/
 *.flac
 audio素材/
 storage/
+音频素材/
 
 # 日志文件
 *.log

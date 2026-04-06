@@ -28,12 +28,12 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 async def get_current_active_user(
     db: AsyncSession = Depends(get_db),
-    token: str = Depends(oauth2_scheme),
+    token: Optional[str] = Depends(oauth2_scheme),
 ) -> User:
     """
     获取当前认证用户，根据AUTH_MODE配置决定认证策略：
@@ -46,6 +46,12 @@ async def get_current_active_user(
         return await get_or_create_mock_user(db)
 
     # jwt模式：要求有效的JWT token
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未提供认证凭证",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     user = await get_current_user(db, token)
     if not user:
         raise HTTPException(

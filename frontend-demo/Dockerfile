@@ -9,7 +9,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install dependencies (including devDependencies for build)
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -27,7 +27,7 @@ COPY --from=builder /app/dist ./dist
 COPY package*.json ./
 
 # Install only production dependencies
-RUN npm ci --only=production
+RUN npm ci --legacy-peer-deps --only=production
 
 # Install serve to serve static files
 RUN npm install -g serve

@@ -20,8 +20,8 @@ export default function Library() {
   const loadClips = async () => {
     setLoading(true);
     try {
-      const data = await api.get<AudioClip[]>('/audio/segments');
-      setClips(data || []);
+      const response = await api.get<{ items: AudioClip[]; total: number }>('/audio/segments');
+      setClips(response?.items || []);
     } catch (error) {
       console.error('Error loading clips:', error);
       setClips([]);

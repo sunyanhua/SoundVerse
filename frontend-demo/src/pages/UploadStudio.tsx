@@ -46,7 +46,7 @@ export default function UploadStudio() {
       formData.append('audio_file', selectedFile);
       formData.append('slicing_strategy', selectedStrategy);
 
-      const response = await fetch('/api/v1/audio/upload', {
+      const response = await fetch('/api/audio/upload', {
         method: 'POST',
         body: formData,
       });
