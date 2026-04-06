@@ -162,6 +162,30 @@ services:
     networks:
       - SoundVerse-network
 
+  # Auto Ingest Service - 本地音频自动入库
+  auto-ingest:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: SoundVerse-auto-ingest
+    command: python -m scripts.auto_ingest /app/data/auto_import --interval 30 --on-complete move --max-concurrent 2
+    volumes:
+      - ./backend/data/auto_import:/app/data/auto_import
+      - ./backend/logs:/app/logs
+      - ./backend/data/uploads:/app/data/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=mysql+asyncmy://soundverse:password@mysql:3306/soundverse
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=development
+    networks:
+      - SoundVerse-network
+    restart: unless-stopped
+
   # Frontend Demo UI
   frontend-demo:
     build:

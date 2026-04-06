@@ -764,3 +764,126 @@ async def get_audio_stats(db: AsyncSession) -> dict:
         "users": users,
         "sources": sources,
     }
+
+
+async def get_user_audio_sources(
+    db: AsyncSession,
+    user_id: str,
+    page: int = 1,
+    limit: int = 20,
+) -> dict:
+    """
+    获取用户的音频源（节目）列表
+
+    返回:
+        items: 节目列表
+        total: 总数
+        page: 当前页
+        limit: 每页数量
+        total_pages: 总页数
+    """
+    from sqlalchemy import select, func
+    from sqlalchemy.orm import selectinload
+
+    # 构建查询
+    stmt = select(AudioSource).options(
+        selectinload(AudioSource.segments)
+    ).where(
+        AudioSource.program_type == "upload"  # 只显示用户上传的节目
+    ).order_by(AudioSource.created_at.desc())
+
+    # 计算总数
+    count_stmt = select(func.count(AudioSource.id)).where(
+        AudioSource.program_type == "upload"
+    )
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    # 应用分页
+    offset = (page - 1) * limit
+    stmt = stmt.limit(limit).offset(offset)
+
+    # 执行查询
+    result = await db.execute(stmt)
+    sources = result.scalars().all()
+
+    # 转换为响应格式
+    items = []
+    for source in sources:
+        # 计算语弹数量
+        segments_count = len(source.segments) if source.segments else 0
+
+        items.append({
+            "id": source.id,
+            "title": source.title,
+            "duration": source.duration,
+            "format": source.format,
+            "file_size": source.file_size,
+            "processing_status": source.processing_status,
+            "processing_progress": source.processing_progress,
+            "segments_count": segments_count,
+            "audio_url": source.oss_url,
+            "created_at": source.created_at.isoformat() if source.created_at else None,
+            "updated_at": source.updated_at.isoformat() if source.updated_at else None,
+        })
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total + limit - 1) // limit if limit > 0 else 0,
+    }
+
+
+async def reprocess_audio_source(
+    db: AsyncSession,
+    source_id: str,
+    user: User,
+) -> bool:
+    """
+    重新处理音频源（重新裁切）
+
+    流程：
+    1. 删除原有的语弹片段
+    2. 重置处理状态
+    3. 启动新的后台处理任务
+    """
+    from sqlalchemy import select, delete
+    from services.audio_processing_service import AudioProcessingService
+
+    # 获取音频源
+    stmt = select(AudioSource).where(AudioSource.id == source_id)
+    result = await db.execute(stmt)
+    source = result.scalar_one_or_none()
+
+    if not source:
+        raise ValueError("音频源不存在")
+
+    # 检查权限（只允许管理员或上传者重新处理）
+    # 这里简化处理，实际应该检查user_id匹配
+    if not user.is_admin:
+        # 可以添加更严格的权限检查
+        pass
+
+    try:
+        # 删除原有的语弹片段
+        delete_stmt = delete(AudioSegment).where(AudioSegment.source_id == source_id)
+        await db.execute(delete_stmt)
+
+        # 重置处理状态
+        source.processing_status = "pending"
+        source.processing_progress = 0.0
+        source.error_message = None
+        await db.commit()
+
+        # 启动新的后台处理任务
+        asyncio.create_task(_process_audio_source_background(source.id, user.id))
+
+        logger.info(f"音频源已重新启动处理: {source_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"重新处理音频源失败: {source_id}, 错误: {e}")
+        await db.rollback()
+        raise

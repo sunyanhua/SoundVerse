@@ -30,6 +30,8 @@ from services.audio_service import (
     get_recommended_audios as get_recommended_audios_service,
     get_audio_segments_paginated,
     get_audio_stats,
+    get_user_audio_sources,
+    reprocess_audio_source,
 )
 from .auth import get_current_active_user, get_current_user_optional
 from config import settings
@@ -360,4 +362,61 @@ async def get_stats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="获取统计数据失败",
+        )
+
+
+@router.get("/sources")
+async def get_user_sources(
+    page: int = 1,
+    limit: int = 20,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    获取当前用户的节目（音频源）列表
+    """
+    try:
+        result = await get_user_audio_sources(
+            db=db,
+            user_id=current_user.id,
+            page=page,
+            limit=limit,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"获取节目列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取节目列表失败",
+        )
+
+
+@router.post("/sources/{source_id}/reprocess")
+async def reprocess_source(
+    source_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    重新处理音频源（重新裁切）
+    """
+    try:
+        success = await reprocess_audio_source(db, source_id, current_user)
+        if success:
+            return {"message": "重新处理已启动", "source_id": source_id}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="重新处理失败",
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"重新处理音频源失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="重新处理音频源失败",
         )

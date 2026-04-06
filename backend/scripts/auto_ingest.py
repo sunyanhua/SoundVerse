@@ -46,7 +46,7 @@ sys.path.insert(0, str(backend_dir))
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from shared.database.session import init_db, async_session_maker
+from shared.database.session import init_db, async_session_maker, engine
 from shared.models.audio import AudioSource
 from shared.models.user import User
 from services.audio_service import upload_audio, _process_audio_source_background
@@ -121,7 +121,17 @@ class AutoIngestManager:
 
     async def _load_processed_hashes(self):
         """从数据库加载已处理的文件哈希"""
-        async with async_session_maker() as db:
+        # 确保数据库会话工厂已初始化
+        from shared.database import session as db_session
+        if db_session.async_session_maker is None:
+            logger.info("数据库会话工厂未初始化，正在初始化...")
+            await init_db()
+            # 重新导入以获取更新后的值
+            from shared.database.session import async_session_maker as asm
+        else:
+            from shared.database.session import async_session_maker as asm
+
+        async with asm() as db:
             # 获取所有已处理的音频源
             stmt = select(AudioSource).where(
                 AudioSource.program_type == "auto_ingest"

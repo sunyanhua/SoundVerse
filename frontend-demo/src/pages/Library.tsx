@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, Tag, Clock, Trash2 } from 'lucide-react';
+import { Search, Filter, Tag, Clock, Trash2, Music } from 'lucide-react';
 import { api, AudioClip } from '../lib/api';
 import AudioPlayer from '../components/AudioPlayer';
 
@@ -20,8 +20,8 @@ export default function Library() {
   const loadClips = async () => {
     setLoading(true);
     try {
-      const response = await api.get<{ items: AudioClip[]; total: number }>('/v1/audio/segments');
-      setClips(response?.items || []);
+      const response = await api.get<{ data: AudioClip[]; total: number }>('/v1/audio/segments');
+      setClips(response?.data || []);
     } catch (error) {
       console.error('Error loading clips:', error);
       setClips([]);
@@ -127,6 +127,12 @@ export default function Library() {
                     <p className="text-gray-600 text-sm mb-3">{clip.transcription}</p>
 
                     <div className="flex flex-wrap gap-2 mb-3">
+                      {clip.source_title && (
+                        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                          <Music className="w-3 h-3 mr-1" />
+                          {clip.source_title}
+                        </span>
+                      )}
                       <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
                         {clip.emotion}
                       </span>

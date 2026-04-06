@@ -1,0 +1,61 @@
+2026-04-06 22:15:35,127 - sqlalchemy.engine.Engine - INFO - SELECT DATABASE()
+2026-04-06 22:15:35,129 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,135 - sqlalchemy.engine.Engine - INFO - SELECT @@sql_mode
+2026-04-06 22:15:35,136 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,138 - sqlalchemy.engine.Engine - INFO - SELECT @@lower_case_table_names
+2026-04-06 22:15:35,138 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,140 - sqlalchemy.engine.Engine - INFO - BEGIN (implicit)
+2026-04-06 22:15:35,143 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`audio_sources`
+2026-04-06 22:15:35,208 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,212 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`audio_segments`
+2026-04-06 22:15:35,213 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,216 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`favorite_segments`
+2026-04-06 22:15:35,217 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,219 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`chat_sessions`
+2026-04-06 22:15:35,219 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,221 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`chat_messages`
+2026-04-06 22:15:35,222 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,226 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`generated_audios`
+2026-04-06 22:15:35,228 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,231 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`preset_prompts`
+2026-04-06 22:15:35,233 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,235 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`users`
+2026-04-06 22:15:35,236 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,238 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`user_tokens`
+2026-04-06 22:15:35,239 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,241 - sqlalchemy.engine.Engine - INFO - DESCRIBE `soundverse`.`user_usage`
+2026-04-06 22:15:35,242 - sqlalchemy.engine.Engine - INFO - [raw sql] ()
+2026-04-06 22:15:35,245 - sqlalchemy.engine.Engine - INFO - COMMIT
+2026-04-06 22:15:35,246 - __main__ - INFO - 数据库连接已初始化
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/app/scripts/auto_ingest.py", line 420, in <module>
+    main()
+  File "/app/scripts/auto_ingest.py", line 410, in main
+    asyncio.run(run_manager(manager))
+  File "/usr/local/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/asyncio/base_events.py", line 654, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/app/scripts/auto_ingest.py", line 415, in run_manager
+    await manager.initialize()
+  File "/app/scripts/auto_ingest.py", line 119, in initialize
+    await self._load_processed_hashes()
+  File "/app/scripts/auto_ingest.py", line 124, in _load_processed_hashes
+    async with async_session_maker() as db:
+               ^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not callable
+Exception ignored in: <function Connection.__del__ at 0x7d02db7dbb00>
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/site-packages/aiomysql/connection.py", line 1131, in __del__
+  File "/usr/local/lib/python3.11/site-packages/aiomysql/connection.py", line 339, in close
+  File "/usr/local/lib/python3.11/asyncio/selector_events.py", line 864, in close
+  File "/usr/local/lib/python3.11/asyncio/base_events.py", line 762, in call_soon
+  File "/usr/local/lib/python3.11/asyncio/base_events.py", line 520, in _check_closed
+RuntimeError: Event loop is closed
