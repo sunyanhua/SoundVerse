@@ -1,61 +1,134 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { MockUser } from '../lib/api';
+import { api } from '../lib/api';
 
-const DEMO_USER: MockUser = {
-  id: 'demo-user-001',
-  email: 'demo@soundverse.ai',
-  name: 'Demo 用户',
-};
+const API_BASE_URL = 'http://localhost:8000/api';
+
+// 预置用户凭据
+const PRESET_USERNAME = "admin";
+const PRESET_PASSWORD = "soundverse2024";
+
+export interface User {
+  id: string;
+  nickname: string;
+  avatar_url?: string;
+  is_admin: boolean;
+}
 
 interface AuthContextType {
-  user: MockUser | null;
+  user: User | null;
   loading: boolean;
-  signIn: (email?: string, password?: string) => Promise<void>;
-  signUp: (email?: string, password?: string) => Promise<void>;
+  signIn: (username?: string, password?: string) => Promise<void>;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
+  token: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<MockUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // 检查本地存储的登录状态
   useEffect(() => {
-    const storedUser = localStorage.getItem('soundverse_user');
-    if (storedUser) {
-      setUser(DEMO_USER);
+    const storedToken = localStorage.getItem('soundverse_token');
+    if (storedToken) {
+      setToken(storedToken);
+      // 验证 token 并获取用户信息
+      fetchUserInfo(storedToken);
+    } else {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
-  // demo模式：忽略参数，直接登录
-  const signIn = async (_email?: string, _password?: string) => {
-    setUser(DEMO_USER);
-    localStorage.setItem('soundverse_user', JSON.stringify(DEMO_USER));
+  // 获取用户信息
+  const fetchUserInfo = async (authToken: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/v1/auth/me`, {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+      });
+
+      if (response.ok) {
+        const userData = await response.json();
+        setUser(userData);
+      } else {
+        // Token 无效，清除登录状态
+        localStorage.removeItem('soundverse_token');
+        setToken(null);
+      }
+    } catch (error) {
+      console.error('获取用户信息失败:', error);
+      localStorage.removeItem('soundverse_token');
+      setToken(null);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const signUp = async (_email?: string, _password?: string) => {
-    // demo模式：注册等同于登录
-    setUser(DEMO_USER);
-    localStorage.setItem('soundverse_user', JSON.stringify(DEMO_USER));
+  // 真实登录
+  const signIn = async (username: string = PRESET_USERNAME, password: string = PRESET_PASSWORD) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/v1/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || '登录失败');
+      }
+
+      const data = await response.json();
+      const accessToken = data.access_token;
+
+      // 保存 token
+      localStorage.setItem('soundverse_token', accessToken);
+      setToken(accessToken);
+
+      // 获取用户信息
+      await fetchUserInfo(accessToken);
+    } catch (error: any) {
+      console.error('登录失败:', error);
+      throw error;
+    }
   };
 
+  // 真实退出
   const signOut = async () => {
-    setUser(null);
-    localStorage.removeItem('soundverse_user');
+    try {
+      // 调用后端登出接口（可选）
+      if (token) {
+        await fetch(`${API_BASE_URL}/v1/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+      }
+    } catch (error) {
+      console.error('登出请求失败:', error);
+    } finally {
+      // 清除本地登录状态
+      localStorage.removeItem('soundverse_token');
+      setToken(null);
+      setUser(null);
+    }
   };
 
   return (
     <AuthContext.Provider value={{
       user,
+      token,
       loading,
       signIn,
-      signUp,
       signOut,
-      isAuthenticated: !!user
+      isAuthenticated: !!user && !!token,
     }}>
       {children}
     </AuthContext.Provider>

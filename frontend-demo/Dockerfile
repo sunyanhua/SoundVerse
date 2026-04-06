@@ -14,6 +14,9 @@ RUN npm ci --legacy-peer-deps
 # Copy source code
 COPY . .
 
+# Set API base URL for production build
+ENV VITE_API_BASE_URL=http://localhost:8000/api
+
 # Build the application
 RUN npm run build
 

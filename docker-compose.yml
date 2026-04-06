@@ -54,7 +54,7 @@ services:
         condition: service_healthy
     environment:
       - ENVIRONMENT=development
-      - AUTH_MODE=demo
+      - AUTH_MODE=jwt
       - DATABASE_URL=mysql+aiomysql://soundverse:password@mysql:3306/soundverse
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -92,7 +92,7 @@ services:
       - mysql
     environment:
       - ENVIRONMENT=development
-      - AUTH_MODE=demo
+      - AUTH_MODE=jwt
       - DATABASE_URL=mysql+aiomysql://soundverse:password@mysql:3306/soundverse
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
@@ -123,7 +123,7 @@ services:
       - mysql
     environment:
       - ENVIRONMENT=development
-      - AUTH_MODE=demo
+      - AUTH_MODE=jwt
       - DATABASE_URL=mysql+aiomysql://soundverse:password@mysql:3306/soundverse
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1

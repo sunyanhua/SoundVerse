@@ -70,59 +70,102 @@ class AudioProcessingService:
             source.processing_progress = 0.1
             await db.commit()
 
-            # 在实际实现中，这里应该：
-            # 1. 从OSS下载音频文件到临时目录
-            # 2. 进行音频分割
-            # 3. 对每个片段进行ASR识别
-            # 4. 提取语义向量
-            # 5. 保存片段到数据库
-            # 6. 更新向量索引
-
-            # 模拟处理过程
-            await asyncio.sleep(2)
-
-            # 模拟创建3个片段
-            segments_data = [
-                {
-                    "start_time": 0.0,
-                    "end_time": 5.0,
-                    "duration": 5.0,
-                    "transcription": "这是第一个音频片段的示例文本。",
-                },
-                {
-                    "start_time": 5.0,
-                    "end_time": 10.0,
-                    "duration": 5.0,
-                    "transcription": "这是第二个音频片段的示例文本。",
-                },
-                {
-                    "start_time": 10.0,
-                    "end_time": 15.0,
-                    "duration": 5.0,
-                    "transcription": "这是第三个音频片段的示例文本。",
-                },
-            ]
-
-            for i, seg_data in enumerate(segments_data):
-                segment = await self._create_audio_segment(
-                    db=db,
-                    source=source,
-                    user=user,
-                    **seg_data
-                )
-                logger.info(f"创建音频片段: {segment.id}")
-
-                # 更新进度
-                source.processing_progress = 0.1 + (i + 1) * 0.3
+            # 获取音频文件路径
+            audio_file_path = source.oss_url
+            if not Path(audio_file_path).exists():
+                logger.error(f"音频文件不存在: {audio_file_path}")
+                source.processing_status = "failed"
+                source.error_message = "音频文件不存在"
                 await db.commit()
+                return False
 
-            # 标记处理完成
-            source.processing_status = "completed"
-            source.processing_progress = 1.0
+            # 验证音频文件
+            validation = await self.validate_audio_file(audio_file_path)
+            if not validation["valid"]:
+                logger.error(f"音频文件验证失败: {validation['messages']}")
+                source.processing_status = "failed"
+                source.error_message = f"音频文件验证失败: {'; '.join(validation['messages'])}"
+                await db.commit()
+                return False
+
+            # 更新音频源信息
+            source.duration = validation["duration"]
+            source.sample_rate = validation["sample_rate"]
+            source.channels = validation["channels"]
+            source.file_size = validation["file_size"]
+            source.processing_progress = 0.2
             await db.commit()
 
-            logger.info(f"音频源处理完成: {source.id}")
-            return True
+            # 进行音频分割
+            logger.info(f"开始分割音频: {audio_file_path}")
+            segments_ranges = await self.split_audio_by_silence(audio_file_path)
+
+            if not segments_ranges:
+                logger.warning("音频分割未返回任何片段")
+                source.processing_status = "failed"
+                source.error_message = "音频分割失败，未识别到有效片段"
+                await db.commit()
+                return False
+
+            logger.info(f"音频分割完成，共 {len(segments_ranges)} 个片段")
+
+            # 处理每个片段
+            total_segments = len(segments_ranges)
+            created_segments = []
+
+            for i, (start_time, end_time) in enumerate(segments_ranges):
+                try:
+                    logger.info(f"处理片段 {i+1}/{total_segments}: {start_time:.2f}s - {end_time:.2f}s")
+
+                    # 提取音频片段
+                    segment_file_path = await self.extract_audio_segment(
+                        audio_file_path, start_time, end_time
+                    )
+
+                    if not segment_file_path:
+                        logger.warning(f"提取片段 {i+1} 失败，跳过")
+                        continue
+
+                    # 处理片段（ASR识别等）
+                    result = await self.process_audio_segment(segment_file_path)
+
+                    if not result["success"] or not result["transcription"]:
+                        logger.warning(f"片段 {i+1} 处理失败或无文本，跳过")
+                        continue
+
+                    # 创建音频片段记录
+                    segment = await self._create_audio_segment(
+                        db=db,
+                        source=source,
+                        user=user,
+                        start_time=start_time,
+                        end_time=end_time,
+                        duration=end_time - start_time,
+                        transcription=result["transcription"],
+                    )
+                    created_segments.append(segment)
+                    logger.info(f"创建音频片段: {segment.id}")
+
+                    # 更新进度
+                    source.processing_progress = 0.2 + (i + 1) / total_segments * 0.7
+                    await db.commit()
+
+                except Exception as seg_e:
+                    logger.error(f"处理片段 {i+1} 时出错: {seg_e}")
+                    continue
+
+            # 标记处理完成
+            if created_segments:
+                source.processing_status = "completed"
+                source.processing_progress = 1.0
+                logger.info(f"音频源处理完成: {source.id}, 共创建 {len(created_segments)} 个片段")
+            else:
+                source.processing_status = "failed"
+                source.error_message = "未成功创建任何音频片段"
+                logger.warning(f"音频源处理未创建任何片段: {source.id}")
+
+            await db.commit()
+            return created_segments
 
         except Exception as e:
             logger.error(f"音频源处理失败: {str(e)}")

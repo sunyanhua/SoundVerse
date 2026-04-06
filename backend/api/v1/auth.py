@@ -16,9 +16,11 @@ from shared.schemas.user import (
     Token,
     UserResponse,
     UserQuota,
+    UserLoginRequest,
 )
 from services.user_service import (
     authenticate_wechat_user,
+    authenticate_preset_user,
     create_access_token,
     get_current_user,
     get_user_quota,
@@ -81,6 +83,44 @@ async def get_current_user_optional(
         return user
     except HTTPException:
         return None
+
+
+@router.post("/login", response_model=Token)
+async def user_login(
+    request: UserLoginRequest,
+    db: AsyncSession = Depends(get_db),
+) -> Any:
+    """
+    账号密码登录（预置用户）
+    """
+    try:
+        user = await authenticate_preset_user(db, request.username, request.password)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="用户名或密码错误",
+            )
+
+        # 创建访问令牌
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = await create_access_token(
+            data={"sub": user.id, "is_admin": user.is_admin},
+            expires_delta=access_token_expires,
+        )
+
+        return Token(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"登录失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="登录失败",
+        )
 
 
 @router.post("/wechat/login", response_model=Token)

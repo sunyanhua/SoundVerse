@@ -5,6 +5,7 @@ import logging
 import uuid
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from sqlalchemy import select
@@ -72,34 +73,35 @@ async def upload_audio(
     request: AudioUploadRequest,
 ) -> AudioUploadResponse:
     """
-    上传音频文件
+    上传音频文件并保存到本地，启动后台处理
     """
+    import shutil
+
     # 生成上传ID
     upload_id = str(uuid.uuid4())
 
-    # 在实际实现中，这里应该：
-    # 1. 将文件上传到OSS
-    # 2. 创建音频源记录
-    # 3. 启动异步处理任务
+    # 确保上传目录存在
+    upload_dir = Path("data/uploads") / upload_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
 
-    # 模拟返回上传响应
-    response = AudioUploadResponse(
-        upload_id=upload_id,
-        oss_policy={
-            "accessid": "test-access-id",
-            "policy": "test-policy",
-            "signature": "test-signature",
-            "dir": "audio/upload/",
-            "host": "https://oss.example.com",
-            "expire": 3600,
-        },
-        oss_signature="test-signature",
-        oss_key=f"audio/upload/{upload_id}/{audio_file.filename}",
-        oss_host="https://oss.example.com",
-        callback_url=f"{settings.HOST}/api/v1/audio/upload/callback",
-    )
+    # 保存上传的文件到本地
+    file_path = upload_dir / audio_file.filename
 
-    # 创建音频源记录（异步）
+    # 读取上传的文件内容并保存
+    content = await audio_file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # 获取文件信息
+    file_size = len(content)
+    file_format = audio_file.filename.split(".")[-1].lower() if "." in audio_file.filename else "mp3"
+
+    logger.info(f"文件已保存到: {file_path}, 大小: {file_size} bytes")
+
+    # 构建本地文件URL（用于后台处理）
+    local_file_url = str(file_path)
+
+    # 创建音频源记录
     source = AudioSource(
         title=request.title,
         description=request.description,
@@ -107,25 +109,46 @@ async def upload_audio(
         tags=request.tags,
         is_public=request.is_public,
         original_filename=audio_file.filename,
-        file_size=0,  # 实际应从文件获取
-        duration=0,  # 实际应从文件获取
-        format="mp3",  # 实际应从文件获取
-        sample_rate=44100,  # 默认值
-        channels=2,  # 默认值
-        oss_key=response.oss_key,
-        oss_url=f"{response.oss_host}/{response.oss_key}",
+        file_size=file_size,
+        duration=0,  # 将在处理时计算
+        format=file_format,
+        sample_rate=44100,
+        channels=2,
+        oss_key=f"audio/upload/{upload_id}/{audio_file.filename}",
+        oss_url=local_file_url,  # 使用本地路径作为临时URL
         processing_status="pending",
     )
 
     db.add(source)
     await db.commit()
+    await db.refresh(source)
 
-    logger.info(f"用户 {user.id} 上传音频: {upload_id}")
+    logger.info(f"用户 {user.id} 上传音频: {source.id}, 文件: {audio_file.filename}")
 
-    # 启动后台处理任务（模拟）
-    asyncio.create_task(_process_audio_source_background(source.id, user.id))
+    # 启动后台处理任务（真实处理）
+    logger.info(f"准备启动后台处理任务: source_id={source.id}, user_id={user.id}")
+    try:
+        task = asyncio.create_task(_process_audio_source_background(str(source.id), str(user.id)))
+        logger.info(f"后台处理任务已创建: task={task}")
+    except Exception as e:
+        logger.error(f"创建后台处理任务失败: {e}")
+        raise
 
-    return response
+    return AudioUploadResponse(
+        upload_id=str(source.id),
+        oss_policy={
+            "accessid": "local",
+            "policy": "local",
+            "signature": "local",
+            "dir": f"audio/upload/{upload_id}/",
+            "host": "local",
+            "expire": 3600,
+        },
+        oss_signature="local",
+        oss_key=f"audio/upload/{upload_id}/{audio_file.filename}",
+        oss_host="local",
+        callback_url=f"{settings.HOST}/api/v1/audio/upload/callback",
+    )
 
 
 async def get_audio_processing_status(
@@ -611,24 +634,81 @@ async def get_audio_segments_paginated(
 
 async def _process_audio_source_background(source_id: str, user_id: str):
     """
-    后台处理音频源（模拟实现）
+    后台处理音频源 - 真实处理流程
 
-    在实际实现中，这里应该：
-    1. 使用Celery任务队列
-    2. 从OSS下载音频文件
-    3. 调用音频处理服务进行分割和ASR识别
-    4. 更新数据库状态
+    处理流程：
+    1. 获取音频源记录
+    2. 使用 AudioProcessingService 进行分割和ASR识别
+    3. 创建音频片段记录
+    4. 更新音频源状态
     """
+    from shared.models.user import User
+    from services.audio_processing_service import AudioProcessingService
+
+    service = AudioProcessingService()
+
     try:
-        logger.info(f"开始后台处理音频源: {source_id}")
+        logger.info(f"[后台任务] 开始执行: source_id={source_id}, user_id={user_id}")
+        logger.info(f"[后台任务] AudioProcessingService 已创建")
 
-        # 模拟处理延迟
-        await asyncio.sleep(5)
+        # 确保数据库已初始化
+        from shared.database.session import async_session_maker, init_db
+        await init_db()
 
-        logger.info(f"音频源后台处理完成: {source_id}")
+        # 创建新的数据库会话
+        async with async_session_maker() as db:
+            # 获取音频源
+            from sqlalchemy import select
+            stmt = select(AudioSource).where(AudioSource.id == source_id)
+            result = await db.execute(stmt)
+            source = result.scalar_one_or_none()
+
+            if not source:
+                logger.error(f"音频源不存在: {source_id}")
+                return
+
+            # 获取用户
+            stmt = select(User).where(User.id == user_id)
+            result = await db.execute(stmt)
+            user = result.scalar_one_or_none()
+
+            if not user:
+                logger.error(f"用户不存在: {user_id}")
+                return
+
+            # 检查文件是否存在
+            file_path = source.oss_url
+            if not Path(file_path).exists():
+                logger.error(f"音频文件不存在: {file_path}")
+                source.processing_status = "failed"
+                source.error_message = "音频文件不存在"
+                await db.commit()
+                return
+
+            # 使用 AudioProcessingService 处理音频
+            success = await service.process_audio_source(db, source, user)
+
+            if success:
+                logger.info(f"音频源处理完成: {source_id}")
+            else:
+                logger.error(f"音频源处理失败: {source_id}")
 
     except Exception as e:
         logger.error(f"音频源后台处理失败: {source_id}, 错误: {str(e)}")
+        # 尝试更新状态为失败
+        try:
+            from shared.database.session import async_session_maker
+            async with async_session_maker() as db:
+                from sqlalchemy import select
+                stmt = select(AudioSource).where(AudioSource.id == source_id)
+                result = await db.execute(stmt)
+                source = result.scalar_one_or_none()
+                if source:
+                    source.processing_status = "failed"
+                    source.error_message = str(e)
+                    await db.commit()
+        except Exception as inner_e:
+            logger.error(f"更新失败状态时出错: {inner_e}")
 
 
 async def get_audio_stats(db: AsyncSession) -> dict:

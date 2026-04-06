@@ -45,14 +45,27 @@ async def optional_auth() -> Optional[User]:
 
 @router.post("/upload", response_model=AudioUploadResponse)
 async def upload_audio_file(
-    request: AudioUploadRequest,
     audio_file: UploadFile = File(...),
+    title: str = Form(""),
+    description: Optional[str] = Form(None),
+    program_type: str = Form("upload"),
+    tags: Optional[str] = Form(None),
+    is_public: bool = Form(True),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> AudioUploadResponse:
     """
     上传音频文件
     """
+    # 构建请求对象
+    request = AudioUploadRequest(
+        title=title or audio_file.filename or "未命名音频",
+        description=description,
+        program_type=program_type,
+        tags=tags.split(",") if tags else [],
+        is_public=is_public,
+    )
+
     # 检查文件大小
     if audio_file.size > settings.MAX_UPLOAD_SIZE:
         raise HTTPException(

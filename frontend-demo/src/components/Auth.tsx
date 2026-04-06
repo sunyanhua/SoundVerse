@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Mic2 } from 'lucide-react';
+import { Mic2, Lock, User } from 'lucide-react';
+
+// 预置用户凭据
+const PRESET_USERNAME = "admin";
+const PRESET_PASSWORD = "soundverse2024";
 
 export default function Auth() {
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState(PRESET_USERNAME);
+  const [password, setPassword] = useState(PRESET_PASSWORD);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const { signIn, signUp } = useAuth();
+  const { signIn } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,13 +19,13 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      if (isLogin) {
-        await signIn(email, password);
-      } else {
-        await signUp(email, password);
+      // 验证是否使用预置凭据
+      if (username !== PRESET_USERNAME || password !== PRESET_PASSWORD) {
+        throw new Error('用户名或密码错误');
       }
+      await signIn(username, password);
     } catch (err: any) {
-      setError(err.message || '操作失败，请重试');
+      setError(err.message || '登录失败，请重试');
     } finally {
       setLoading(false);
     }
@@ -40,7 +43,7 @@ export default function Auth() {
           </div>
 
           <h2 className="text-xl font-semibold text-white mb-6 text-center">
-            {isLogin ? '登录账号' : '注册新账号'}
+            系统登录
           </h2>
 
           {error && (
@@ -52,30 +55,36 @@ export default function Auth() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-200 mb-2">
-                邮箱
+                用户名
               </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="your@email.com"
-                required
-              />
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="请输入用户名"
+                  required
+                />
+              </div>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-200 mb-2">
                 密码
               </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="••••••••"
-                required
-              />
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="请输入密码"
+                  required
+                />
+              </div>
             </div>
 
             <button
@@ -83,17 +92,13 @@ export default function Auth() {
               disabled={loading}
               className="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? '处理中...' : isLogin ? '登录' : '注册'}
+              {loading ? '登录中...' : '登录'}
             </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <button
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-blue-300 hover:text-blue-200 text-sm transition-colors"
-            >
-              {isLogin ? '还没有账号？立即注册' : '已有账号？立即登录'}
-            </button>
+          <div className="mt-6 text-center text-gray-400 text-sm">
+            <p>请使用预置账号登录</p>
+            <p className="mt-1">用户名: admin | 密码: soundverse2024</p>
           </div>
         </div>
 

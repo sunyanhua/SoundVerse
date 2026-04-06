@@ -20,7 +20,7 @@ export default function Library() {
   const loadClips = async () => {
     setLoading(true);
     try {
-      const response = await api.get<{ items: AudioClip[]; total: number }>('/audio/segments');
+      const response = await api.get<{ items: AudioClip[]; total: number }>('/v1/audio/segments');
       setClips(response?.items || []);
     } catch (error) {
       console.error('Error loading clips:', error);
@@ -33,7 +33,7 @@ export default function Library() {
     if (!confirm('确定要删除这条语弹吗？')) return;
 
     try {
-      await api.delete(`/audio/favorite/${id}`);
+      await api.delete(`/v1/audio/favorite/${id}`);
       setClips(clips.filter(clip => clip.id !== id));
     } catch (error) {
       console.error('Error deleting clip:', error);

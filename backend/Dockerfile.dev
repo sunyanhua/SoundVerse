@@ -4,8 +4,14 @@ FROM python:3.11-slim
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖
-RUN apt-get update --fix-missing || apt-get update && apt-get install -y --no-install-recommends \
+# 配置apt使用阿里云镜像源
+RUN echo "deb http://mirrors.aliyun.com/debian trixie main" > /etc/apt/sources.list.d/aliyun.list && \
+    echo "deb http://mirrors.aliyun.com/debian trixie-updates main" >> /etc/apt/sources.list.d/aliyun.list && \
+    echo "deb http://mirrors.aliyun.com/debian-security trixie-security main" >> /etc/apt/sources.list.d/aliyun.list
+
+# 安装系统依赖（使用阿里云镜像）
+RUN apt-get update -o Acquire::Retries=3 && \
+    apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libffi-dev \
@@ -13,8 +19,7 @@ RUN apt-get update --fix-missing || apt-get update && apt-get install -y --no-in
     libmariadb-dev \
     pkg-config \
     ffmpeg \
-    || (sleep 5 && apt-get install -y --no-install-recommends gcc g++ libffi-dev libssl-dev libmariadb-dev pkg-config ffmpeg) \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/aliyun.list
 
 # 复制依赖文件
 COPY pyproject.toml ./

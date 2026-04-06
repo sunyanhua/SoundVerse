@@ -98,7 +98,7 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
         <div className="p-4 border-t border-slate-700 space-y-3">
           {!sidebarCollapsed && user && (
             <div className="text-sm text-gray-300 px-3 py-2 bg-slate-700/50 rounded-lg truncate">
-              {user.email}
+              {user.nickname || '管理员'}
             </div>
           )}
 

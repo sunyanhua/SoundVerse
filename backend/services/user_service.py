@@ -17,6 +17,57 @@ from shared.schemas.user import UserQuota, WechatUserInfo
 logger = logging.getLogger(__name__)
 
 
+# 预置用户配置
+PRESET_USERNAME = "admin"
+PRESET_PASSWORD = "soundverse2024"
+PRESET_USER_ID = "preset-user-001"
+
+
+async def authenticate_preset_user(
+    db: AsyncSession,
+    username: str,
+    password: str,
+) -> Optional[User]:
+    """
+    验证预置用户账号密码
+    """
+    # 验证账号密码
+    if username != PRESET_USERNAME or password != PRESET_PASSWORD:
+        logger.warning(f"登录失败: 用户名或密码错误 - {username}")
+        return None
+
+    # 查找或创建预置用户
+    stmt = select(User).where(User.id == PRESET_USER_ID)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if user:
+        # 更新最后活跃时间
+        user.last_active_at = datetime.utcnow()
+        await db.commit()
+        logger.info(f"预置用户登录成功: {user.id}")
+        return user
+
+    # 创建预置用户
+    user = User(
+        id=PRESET_USER_ID,
+        wechat_openid=f"preset_{PRESET_USER_ID}",
+        nickname="管理员",
+        avatar_url="https://example.com/admin-avatar.jpg",
+        is_active=True,
+        is_premium=True,
+        is_admin=True,
+        last_active_at=datetime.utcnow(),
+    )
+
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    logger.info(f"创建预置用户: {user.id}")
+    return user
+
+
 async def authenticate_wechat_user(
     db: AsyncSession,
     code: str,

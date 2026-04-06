@@ -76,6 +76,12 @@ class WechatLoginRequest(BaseModel):
     code: str = Field(..., description="微信登录code")
 
 
+class UserLoginRequest(BaseModel):
+    """账号密码登录请求模型"""
+    username: str = Field(..., description="用户名")
+    password: str = Field(..., description="密码")
+
+
 class WechatUserInfo(BaseModel):
     """微信用户信息模型"""
     openId: str

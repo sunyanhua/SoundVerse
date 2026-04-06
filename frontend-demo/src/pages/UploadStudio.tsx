@@ -1,6 +1,6 @@
-import { useState } from 'react';
-import { Upload, Sparkles, Check, Loader2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
+import { Upload, Sparkles, Check, Loader2 } from 'lucide-react';
 
 const slicingStrategies = [
   { id: 'sentence', label: '短句裁切', description: '识别完整短句，生成简洁清晰的语弹片段' },
@@ -14,93 +14,144 @@ export default function UploadStudio() {
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [uploadId, setUploadId] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState('准备处理...');
+  const [segmentsCount, setSegmentsCount] = useState(0);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const statusCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
       setIsComplete(false);
+      setUploadId(null);
+      setProgress(0);
+      setSegmentsCount(0);
+    }
+  };
+
+  // 清理定时器
+  const clearIntervals = () => {
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    if (statusCheckIntervalRef.current) {
+      clearInterval(statusCheckIntervalRef.current);
+      statusCheckIntervalRef.current = null;
+    }
+  };
+
+  // 检查处理状态
+  const checkProcessingStatus = async (id: string) => {
+    try {
+      const response = await api.get(`/v1/audio/processing/${id}`);
+      const data = response as {
+        status: string;
+        progress: number;
+        error_message?: string;
+        result?: { segments_count: number };
+      };
+
+      setProgress(Math.min(data.progress * 100, 99));
+      setStatusMessage(getStatusText(data.status));
+
+      if (data.status === 'completed') {
+        clearIntervals();
+        setProgress(100);
+        setIsComplete(true);
+        setProcessing(false);
+        setSegmentsCount(data.result?.segments_count || 0);
+      } else if (data.status === 'failed') {
+        clearIntervals();
+        setProcessing(false);
+        setStatusMessage(`处理失败: ${data.error_message || '未知错误'}`);
+        alert(`音频处理失败: ${data.error_message || '请重试'}`);
+      }
+    } catch (error) {
+      console.error('检查处理状态失败:', error);
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return '等待处理...';
+      case 'processing':
+        return 'AI 正在分析音频特征、识别语义边界...';
+      case 'completed':
+        return '处理完成！';
+      case 'failed':
+        return '处理失败';
+      default:
+        return '处理中...';
     }
   };
 
   const handleUpload = async () => {
     if (!selectedFile) return;
 
+    // 清理之前的定时器
+    clearIntervals();
+
     setProcessing(true);
     setProgress(0);
     setIsComplete(false);
-
-    // 模拟进度动画
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 90) {
-          clearInterval(progressInterval);
-          return 90;
-        }
-        return prev + 5;
-      });
-    }, 200);
+    setStatusMessage('正在上传音频...');
 
     try {
+      // 创建 FormData
       const formData = new FormData();
       formData.append('audio_file', selectedFile);
+      formData.append('title', selectedFile.name.replace(/\.[^/.]+$/, ''));
+      formData.append('program_type', 'upload');
+      formData.append('is_public', 'true');
       formData.append('slicing_strategy', selectedStrategy);
 
-      const response = await fetch('/api/audio/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      // 上传音频
+      const response = await api.upload('/v1/audio/upload', formData);
+      const data = response as { upload_id: string };
 
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.status}`);
+      if (!data.upload_id) {
+        throw new Error('上传失败，未返回 upload_id');
       }
 
-      clearInterval(progressInterval);
-      setProgress(100);
-      setIsComplete(true);
+      setUploadId(data.upload_id);
+      setStatusMessage('上传成功，开始 AI 处理...');
+
+      // 模拟进度动画（到90%）
+      progressIntervalRef.current = setInterval(() => {
+        setProgress(prev => {
+          if (prev >= 90) {
+            return prev;
+          }
+          return prev + Math.random() * 5;
+        });
+      }, 1000);
+
+      // 开始轮询处理状态
+      statusCheckIntervalRef.current = setInterval(() => {
+        checkProcessingStatus(data.upload_id);
+      }, 3000);
+
+      // 立即检查一次
+      checkProcessingStatus(data.upload_id);
+
     } catch (error) {
       console.error('Upload error:', error);
-      // 降级为本地模拟
-      clearInterval(progressInterval);
-      for (let i = progress; i <= 100; i += 2) {
-        await new Promise(resolve => setTimeout(resolve, 50));
-        setProgress(i);
-      }
-
-      const mockClipsCount = Math.floor(Math.random() * 3) + 4;
-      const mockTranscriptions = [
-        '今天北京的天气真不错，阳光明媚，温度适宜',
-        '刚才在路上看到了一只可爱的小狗，忍不住多看了几眼',
-        '这个餐厅的烤鸭真是太好吃了，皮脆肉嫩，回味无穷',
-      ];
-      const mockEmotions = ['开心', '惊喜', '平静', '兴奋', '期待', '满足'];
-      const mockTags = ['生活', '北京', '美食', '天气', '日常', '心情'];
-
-      for (let i = 0; i < mockClipsCount; i++) {
-        const transcription = mockTranscriptions[Math.floor(Math.random() * mockTranscriptions.length)];
-        const emotion = mockEmotions[Math.floor(Math.random() * mockEmotions.length)];
-        const duration = Math.floor(Math.random() * 10) + 5;
-        const randomTags = mockTags.sort(() => 0.5 - Math.random()).slice(0, 2);
-
-        try {
-          await api.post('/audio/favorite', {
-            title: `${selectedFile.name} - 片段 ${i + 1}`,
-            transcription,
-            duration,
-            audio_url: `https://example.com/audio/${Date.now()}_${i}.mp3`,
-            tags: randomTags,
-            emotion,
-          });
-        } catch {
-          // 静默失败
-        }
-      }
-
-      setIsComplete(true);
+      clearIntervals();
+      setProcessing(false);
+      alert('上传失败，请重试');
     }
-
-    setProcessing(false);
   };
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      clearIntervals();
+    };
+  }, []);
 
   return (
     <div className="min-h-full bg-gradient-to-br from-blue-50 via-white to-purple-50 p-6">
@@ -169,17 +220,15 @@ export default function UploadStudio() {
                   <Loader2 className="w-5 h-5 text-blue-500 animate-spin mr-2" />
                   <span className="font-semibold text-gray-800">AI 智能处理中...</span>
                 </div>
-                <span className="text-sm font-medium text-blue-600">{progress}%</span>
+                <span className="text-sm font-medium text-blue-600">{Math.round(progress)}%</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
                 <div
                   className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-300 rounded-full"
-                  style={{ width: `${progress}%` }}
+                  style={{ width: `${Math.min(progress, 100)}%` }}
                 />
               </div>
-              <p className="text-sm text-gray-600 mt-3">
-                正在分析音频特征、识别语义边界、生成语弹片段...
-              </p>
+              <p className="text-sm text-gray-600 mt-3">{statusMessage}</p>
             </div>
           )}
 
@@ -192,7 +241,7 @@ export default function UploadStudio() {
                 <div>
                   <h3 className="font-semibold text-gray-800">处理完成！</h3>
                   <p className="text-sm text-gray-600">
-                    已成功生成多个语弹片段，请前往"精选语弹库"查看
+                    已成功生成 {segmentsCount} 个语弹片段，请前往"精选语弹库"查看
                   </p>
                 </div>
               </div>

@@ -93,7 +93,7 @@ class Settings(BaseSettings):
     AUDIO_CHANNELS: int = 1
     AUDIO_BITRATE: str = "64k"
     MIN_AUDIO_DURATION: float = 1.0  # 最短音频时长（秒）
-    MAX_AUDIO_DURATION: float = 300.0  # 最长音频时长（秒）
+    MAX_AUDIO_DURATION: float = 7200.0  # 2小时  # 最长音频时长（秒）
 
     # 音频分割配置
     MIN_SILENCE_LEN: int = 500  # 毫秒（符合CLAUDE.md规范）
