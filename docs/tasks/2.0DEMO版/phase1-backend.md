@@ -157,13 +157,15 @@ curl -X POST http://localhost:8000/api/v1/chat/preset-prompts \
 - `backend/test.db` - 测试数据库（应加入.gitignore）
 
 ## 验收标准
-- [ ] PresetPrompt模型在数据库中正确创建
-- [ ] 数据库迁移脚本可成功执行和回滚
-- [ ] 点赞保存API端点响应正常
-- [ ] 随机提示词API返回正确格式数据
-- [ ] 模拟用户认证在无token时正常工作
-- [ ] 健康检查端点`/api/health`和`/health`都可访问
-- [ ] 后端服务启动无错误
+- [x] PresetPrompt模型在数据库中正确创建 (`backend/shared/models/chat.py:182`)
+- [x] 数据库迁移脚本可成功执行和回滚 (`backend/alembic/versions/20240405_add_preset_prompts.py`)
+- [x] 点赞保存API端点响应正常 (`/api/v1/chat/messages/{message_id}/like`)
+- [x] 随机提示词API返回正确格式数据 (`/api/v1/chat/preset-prompts/random`)
+- [x] 模拟用户认证在无token时正常工作 (`backend/api/v1/auth.py`, `demo-user-001`)
+- [x] 健康检查端点`/api/health`和`/health`都可访问 (`backend/main.py:117-158`)
+- [x] 后端服务启动无错误
+
+**验收结论**: ✅ **2026-04-06 验收通过，所有检查项已完成**
 
 ## 相关文件
 - `backend/shared/models/chat.py` - 数据模型定义

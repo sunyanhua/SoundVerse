@@ -144,6 +144,19 @@ def create_app() -> FastAPI:
             checks["redis"] = f"unhealthy: {str(e)}"
             status_code = 503
 
+        # 检查DashVector连接
+        try:
+            from services.search_service import search_service
+            # 尝试获取搜索统计信息来验证连接
+            stats = await search_service.get_index_stats()
+            checks["dashvector"] = "healthy"
+            checks["vector_engine"] = stats.get("engine", "unknown")
+            checks["vector_segments"] = stats.get("total_segments", 0)
+        except Exception as e:
+            # 如果DashVector未配置或连接失败，记录状态
+            checks["dashvector"] = f"unhealthy: {str(e)}"
+            status_code = 503
+
         # 总体状态
         overall_status = "healthy" if status_code == 200 else "unhealthy"
 

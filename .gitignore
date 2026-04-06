@@ -236,6 +236,7 @@ __pycache__/
 .env.*.local
 .env.backup.*
 .env.prod
+deploy-config.json
 
 # 开发工具缓存
 .pytest_cache/
