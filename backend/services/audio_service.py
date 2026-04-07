@@ -4,17 +4,18 @@
 import logging
 import uuid
 import asyncio
-import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 
-# 创建线程池用于执行CPU密集型任务（音频处理）
-# 使用单独的线程池避免阻塞主事件循环
-_audio_processing_executor = concurrent.futures.ThreadPoolExecutor(
-    max_workers=2,
-    thread_name_prefix="audio_processor"
-)
+# 使用 Celery 进行真正的后台处理
+# 完全隔离主进程，避免事件循环和数据库连接冲突
+try:
+    from tasks import process_audio_source_task
+    CELERY_AVAILABLE = True
+except ImportError:
+    CELERY_AVAILABLE = False
+    process_audio_source_task = None
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -104,10 +105,24 @@ async def upload_audio(
     file_size = len(content)
     file_format = audio_file.filename.split(".")[-1].lower() if "." in audio_file.filename else "mp3"
 
+    # 计算音频时长
+    audio_duration = 0
+    try:
+        from pydub import AudioSegment as PydubAudioSegment
+        audio = PydubAudioSegment.from_file(file_path)
+        audio_duration = audio.duration_seconds
+        logger.info(f"音频时长: {audio_duration}秒")
+    except Exception as e:
+        logger.warning(f"无法计算音频时长: {e}")
+
     logger.info(f"文件已保存到: {file_path}, 大小: {file_size} bytes")
 
-    # 构建本地文件URL（用于后台处理）
-    local_file_url = str(file_path)
+    # 构建本地文件路径（用于后台处理）
+    local_file_path = str(file_path)
+
+    # 构建可访问的音频URL（用于前端播放）
+    # 使用相对路径，前端通过后端API访问文件
+    public_audio_url = f"/api/v1/audio/file/{upload_id}/{audio_file.filename}"
 
     # 创建音频源记录
     source = AudioSource(
@@ -118,13 +133,13 @@ async def upload_audio(
         is_public=request.is_public,
         original_filename=audio_file.filename,
         file_size=file_size,
-        duration=0,  # 将在处理时计算
+        duration=audio_duration,  # 上传时计算的音频时长
         format=file_format,
         sample_rate=44100,
         channels=2,
         oss_key=f"audio/upload/{upload_id}/{audio_file.filename}",
-        oss_url=local_file_url,  # 使用本地路径作为临时URL
-        processing_status="pending",
+        oss_url=local_file_path,  # 使用本地路径作为临时URL（后台处理使用）
+        processing_status="processing",  # 上传后立即设为处理中
     )
 
     db.add(source)
@@ -133,18 +148,15 @@ async def upload_audio(
 
     logger.info(f"用户 {user.id} 上传音频: {source.id}, 文件: {audio_file.filename}")
 
-    # 启动后台处理任务（使用线程池，避免阻塞API事件循环）
+    # 启动后台处理任务（使用 Celery，完全隔离）
     logger.info(f"准备启动后台处理任务: source_id={source.id}, user_id={user.id}")
     try:
-        # 在线程池中执行CPU密集型任务，不阻塞主事件循环
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(
-            _audio_processing_executor,
-            _run_process_audio_sync,
-            str(source.id),
-            str(user.id)
-        )
-        logger.info(f"后台处理任务已提交到线程池: source_id={source.id}")
+        if CELERY_AVAILABLE and process_audio_source_task:
+            # 使用 Celery 进行真正的后台处理
+            process_audio_source_task.delay(str(source.id), str(user.id))
+            logger.info(f"后台处理任务已提交到 Celery: source_id={source.id}")
+        else:
+            logger.warning("Celery 不可用，音频将不会自动处理")
     except Exception as e:
         logger.error(f"创建后台处理任务失败: {e}")
         raise
@@ -800,16 +812,24 @@ async def get_user_audio_sources(
     from sqlalchemy import select, func
     from sqlalchemy.orm import selectinload
 
-    # 构建查询
+    from sqlalchemy import and_
+
+    # 构建查询 - 只显示用户上传且未删除的节目
     stmt = select(AudioSource).options(
         selectinload(AudioSource.segments)
     ).where(
-        AudioSource.program_type == "upload"  # 只显示用户上传的节目
+        and_(
+            AudioSource.program_type == "upload",
+            AudioSource.processing_status != "deleted"  # 过滤已删除的节目
+        )
     ).order_by(AudioSource.created_at.desc())
 
     # 计算总数
     count_stmt = select(func.count(AudioSource.id)).where(
-        AudioSource.program_type == "upload"
+        and_(
+            AudioSource.program_type == "upload",
+            AudioSource.processing_status != "deleted"
+        )
     )
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
@@ -828,6 +848,21 @@ async def get_user_audio_sources(
         # 计算语弹数量
         segments_count = len(source.segments) if source.segments else 0
 
+        # 构建可访问的音频URL
+        # 如果 oss_url 是本地路径，则构建完整的API访问URL
+        api_base = "http://localhost:8000/api"  # TODO: 从配置读取
+        if source.oss_url and source.oss_url.startswith("data/uploads/"):
+            # 从路径中提取 upload_id 和文件名
+            parts = source.oss_url.replace("data/uploads/", "").split("/")
+            if len(parts) >= 2:
+                upload_id = parts[0]
+                filename = parts[1]
+                audio_url = f"/api/v1/audio/file/{upload_id}/{filename}"
+            else:
+                audio_url = source.oss_url
+        else:
+            audio_url = source.oss_url
+
         items.append({
             "id": source.id,
             "title": source.title,
@@ -837,7 +872,7 @@ async def get_user_audio_sources(
             "processing_status": source.processing_status,
             "processing_progress": source.processing_progress,
             "segments_count": segments_count,
-            "audio_url": source.oss_url,
+            "audio_url": audio_url,
             "created_at": source.created_at.isoformat() if source.created_at else None,
             "updated_at": source.updated_at.isoformat() if source.updated_at else None,
         })
@@ -892,14 +927,12 @@ async def reprocess_audio_source(
         source.error_message = None
         await db.commit()
 
-        # 启动新的后台处理任务（使用线程池，避免阻塞API事件循环）
-        loop = asyncio.get_event_loop()
-        loop.run_in_executor(
-            _audio_processing_executor,
-            _run_process_audio_sync,
-            str(source.id),
-            str(user.id)
-        )
+        # 启动新的后台处理任务（使用 Celery）
+        if CELERY_AVAILABLE and process_audio_source_task:
+            process_audio_source_task.delay(str(source.id), str(user.id))
+            logger.info(f"重新处理任务已提交到 Celery: source_id={source.id}")
+        else:
+            logger.warning("Celery 不可用，无法重新处理")
 
         logger.info(f"音频源已重新启动处理: {source_id}")
         return True
@@ -909,21 +942,38 @@ async def reprocess_audio_source(
         await db.rollback()
         raise
 
-def _run_process_audio_sync(source_id: str, user_id: str):
+def _run_audio_processing_in_thread(source_id: str, user_id: str):
     """
-    同步包装函数，用于在线程池中运行异步的音频处理任务
+    在独立线程中运行音频处理任务
 
-    使用 asyncio.run() 确保所有异步代码在正确的事件循环中执行，
-    避免 "attached to a different loop" 错误
+    每个线程有自己的事件循环，通过线程隔离 + 独立数据库连接，
+    避免与主事件循环的冲突
     """
+    import asyncio
+    import sys
+
+    # 直接使用 print 输出到 stderr，确保能看到日志
+    print(f"[AUDIO-THREAD-{source_id[:8]}] 线程启动", file=sys.stderr, flush=True)
+
     try:
-        # 使用 asyncio.run() 自动管理事件循环生命周期
-        # 这确保所有 asyncio 对象（如 Semaphore）都在同一个循环中创建
-        asyncio.run(_process_audio_source_background_isolated(source_id, user_id))
+        # 在新线程中创建全新的事件循环
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        print(f"[AUDIO-THREAD-{source_id[:8]}] 事件循环已创建", file=sys.stderr, flush=True)
+
+        # 运行处理任务
+        loop.run_until_complete(_process_audio_source_background_isolated(source_id, user_id))
+        print(f"[AUDIO-THREAD-{source_id[:8]}] 处理完成", file=sys.stderr, flush=True)
     except Exception as e:
-        logger.error(f"线程池中的音频处理任务失败: source_id={source_id}, error={e}")
+        print(f"[AUDIO-THREAD-{source_id[:8]}] ERROR: {e}", file=sys.stderr, flush=True)
         import traceback
-        logger.error(traceback.format_exc())
+        print(traceback.format_exc(), file=sys.stderr, flush=True)
+    finally:
+        # 清理事件循环
+        try:
+            loop.close()
+        except:
+            pass
 
 
 async def _process_audio_source_background_isolated(source_id: str, user_id: str):
@@ -935,28 +985,51 @@ async def _process_audio_source_background_isolated(source_id: str, user_id: str
     """
     from shared.models.user import User
     from services.audio_processing_service import AudioProcessingService
-    from shared.database.session import async_session_maker, init_db
     from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from pathlib import Path
+    from config import settings
+    from shared.database import Base
 
     service = AudioProcessingService()
 
-    try:
-        logger.info(f"[独立线程任务] 开始执行: source_id={source_id}, user_id={user_id}")
+    # 在线程池中创建独立的数据库引擎和会话工厂
+    # 避免与主事件循环的引擎冲突
+    isolated_engine = create_async_engine(
+        settings.get_database_url(),
+        echo=False,
+        pool_size=5,
+        pool_recycle=3600,
+        pool_pre_ping=True,
+    )
 
-        # 确保数据库已初始化
-        await init_db()
+    isolated_session_maker = async_sessionmaker(
+        isolated_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    import sys
+
+    try:
+        print(f"[AUDIO-ISOLATED-{source_id[:8]}] 开始执行", file=sys.stderr, flush=True)
 
         # 创建新的数据库会话
-        async with async_session_maker() as db:
+        print(f"[AUDIO-ISOLATED-{source_id[:8]}] 创建数据库会话...", file=sys.stderr, flush=True)
+        async with isolated_session_maker() as db:
+            print(f"[AUDIO-ISOLATED-{source_id[:8]}] 数据库会话已创建", file=sys.stderr, flush=True)
+
             # 获取音频源
+            print(f"[AUDIO-ISOLATED-{source_id[:8]}] 查询音频源...", file=sys.stderr, flush=True)
             stmt = select(AudioSource).where(AudioSource.id == source_id)
             result = await db.execute(stmt)
             source = result.scalar_one_or_none()
 
             if not source:
-                logger.error(f"音频源不存在: {source_id}")
+                print(f"[AUDIO-ISOLATED-{source_id[:8]}] ERROR: 音频源不存在", file=sys.stderr, flush=True)
                 return
+
+            print(f"[AUDIO-ISOLATED-{source_id[:8]}] 找到音频: {source.title}", file=sys.stderr, flush=True)
 
             # 获取用户
             stmt = select(User).where(User.id == user_id)
@@ -988,7 +1061,7 @@ async def _process_audio_source_background_isolated(source_id: str, user_id: str
         logger.error(f"音频源后台处理失败: {source_id}, 错误: {str(e)}")
         # 尝试更新状态为失败
         try:
-            async with async_session_maker() as db:
+            async with isolated_session_maker() as db:
                 stmt = select(AudioSource).where(AudioSource.id == source_id)
                 result = await db.execute(stmt)
                 source = result.scalar_one_or_none()
@@ -998,3 +1071,9 @@ async def _process_audio_source_background_isolated(source_id: str, user_id: str
                     await db.commit()
         except Exception as inner_e:
             logger.error(f"更新失败状态时出错: {inner_e}")
+    finally:
+        # 清理独立的数据库引擎
+        try:
+            await isolated_engine.dispose()
+        except Exception as e:
+            logger.error(f"清理数据库引擎失败: {e}")

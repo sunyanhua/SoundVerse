@@ -38,30 +38,45 @@ export default function UploadStudio() {
     }
   }, [view]);
 
-  // 定时刷新节目列表（当有处理中的节目时，每10秒刷新一次）
+  // 定时刷新节目列表（当有处理中的节目时，每5秒刷新一次）
   useEffect(() => {
     if (view !== 'list') return;
 
-    const hasProcessing = sources.some(
-      s => s.processing_status === 'processing'
-    );
+    // 使用 ref 避免依赖 sources 导致频繁重置 interval
+    const checkAndRefresh = () => {
+      setSources(currentSources => {
+        const hasProcessing = currentSources.some(
+          s => s.processing_status === 'processing'
+        );
+        if (hasProcessing) {
+          // 有处理中的任务，后台刷新（不显示 loading）
+          loadSources(true);
+        }
+        return currentSources;
+      });
+    };
 
-    if (hasProcessing) {
-      const interval = setInterval(loadSources, 10000);
-      return () => clearInterval(interval);
+    // 立即检查一次
+    checkAndRefresh();
+
+    // 设置定时刷新
+    const interval = setInterval(checkAndRefresh, 5000);
+    return () => clearInterval(interval);
+  }, [view]); // 只依赖 view，避免 sources 变化导致重置
+
+  const loadSources = async (background = false) => {
+    if (!background) {
+      setLoading(true);
     }
-  }, [view, sources]);
-
-  const loadSources = async () => {
-    setLoading(true);
     try {
       const response = await api.get<{ items: AudioSource[]; total: number }>('/v1/audio/sources');
       setSources(response?.items || []);
     } catch (error) {
       console.error('Error loading sources:', error);
-      setSources([]);
     }
-    setLoading(false);
+    if (!background) {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (sourceId: string) => {
@@ -257,6 +272,20 @@ export default function UploadStudio() {
       clearIntervals();
     };
   }, []);
+
+  // 当切换到上传视图时，如果有未完成的处理任务，恢复轮询
+  useEffect(() => {
+    if (view === 'upload' && uploadId && processing && !isComplete) {
+      // 恢复状态检查轮询
+      if (!statusCheckIntervalRef.current) {
+        statusCheckIntervalRef.current = setInterval(() => {
+          checkProcessingStatus(uploadId);
+        }, 3000);
+      }
+      // 立即检查一次
+      checkProcessingStatus(uploadId);
+    }
+  }, [view]);
 
   // 渲染节目列表视图
   const renderListView = () => (

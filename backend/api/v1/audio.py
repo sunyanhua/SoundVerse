@@ -420,3 +420,40 @@ async def reprocess_source(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="重新处理音频源失败",
         )
+
+@router.get("/file/{upload_id}/{filename}")
+async def get_audio_file(
+    upload_id: str,
+    filename: str,
+):
+    """
+    获取音频文件（用于播放上传的音频）
+    """
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+
+    # 构建文件路径
+    file_path = Path("data/uploads") / upload_id / filename
+
+    if not file_path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="文件不存在",
+        )
+
+    # 根据文件扩展名设置MIME类型
+    ext = filename.lower().split(".")[-1] if "." in filename else ""
+    media_type_map = {
+        "mp3": "audio/mpeg",
+        "m4a": "audio/mp4",
+        "wav": "audio/wav",
+        "ogg": "audio/ogg",
+        "flac": "audio/flac",
+    }
+    media_type = media_type_map.get(ext, "audio/mpeg")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_type,
+        filename=filename,
+    )

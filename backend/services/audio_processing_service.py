@@ -4,6 +4,7 @@
 import logging
 import asyncio
 import tempfile
+import shutil
 import uuid
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -142,6 +143,7 @@ class AudioProcessingService:
                         end_time=end_time,
                         duration=end_time - start_time,
                         transcription=result["transcription"],
+                        segment_file_path=segment_file_path,
                     )
                     created_segments.append(segment)
                     logger.info(f"创建音频片段: {segment.id}")
@@ -183,6 +185,7 @@ class AudioProcessingService:
         end_time: float,
         duration: float,
         transcription: str,
+        segment_file_path: str,
         language: str = "zh-CN",
     ) -> AudioSegment:
         """
@@ -190,13 +193,31 @@ class AudioProcessingService:
         """
         segment_id = str(uuid.uuid4())
 
-        # 生成OSS键（在实际实现中，这里应该从原始音频中提取片段并上传到OSS）
+        # 上传音频片段到OSS
         oss_key = f"audio/segments/{segment_id}.mp3"
-        # 使用自定义域名或标准域名
-        if hasattr(settings, 'OSS_PUBLIC_DOMAIN') and settings.OSS_PUBLIC_DOMAIN:
-            oss_url = f"{settings.OSS_PUBLIC_DOMAIN}/{oss_key}"
-        else:
-            oss_url = f"https://{settings.OSS_BUCKET}.{settings.OSS_ENDPOINT}/{oss_key}"
+        oss_url = None
+
+        try:
+            from services.storage_service import upload_audio_file_to_oss
+            uploaded_key, uploaded_url = await upload_audio_file_to_oss(
+                local_file_path=segment_file_path,
+                object_key=oss_key,
+            )
+            if uploaded_url:
+                oss_url = uploaded_url
+                oss_key = uploaded_key or oss_key
+                logger.info(f"音频片段上传成功: {oss_url}")
+            else:
+                logger.warning(f"音频片段上传失败，使用构造URL: {oss_key}")
+        except Exception as e:
+            logger.error(f"上传音频片段到OSS失败: {e}")
+
+        # 如果上传失败，使用构造的URL
+        if not oss_url:
+            if hasattr(settings, 'OSS_PUBLIC_DOMAIN') and settings.OSS_PUBLIC_DOMAIN:
+                oss_url = f"{settings.OSS_PUBLIC_DOMAIN}/{oss_key}"
+            else:
+                oss_url = f"https://{settings.OSS_BUCKET}.{settings.OSS_ENDPOINT}/{oss_key}"
 
         # 获取文本向量（文档类型）
         vector = await get_text_vector(transcription, text_type="document")
@@ -230,6 +251,15 @@ class AudioProcessingService:
 
         db.add(segment)
         await db.flush()  # 获取ID但不提交，由外部统一提交
+
+        # 清理临时文件
+        try:
+            if segment_file_path and Path(segment_file_path).exists():
+                temp_dir = Path(segment_file_path).parent
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.debug(f"清理临时文件: {temp_dir}")
+        except Exception as e:
+            logger.warning(f"清理临时文件失败: {e}")
 
         return segment
 

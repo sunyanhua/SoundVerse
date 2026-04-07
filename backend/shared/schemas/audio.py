@@ -3,7 +3,7 @@
 """
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl, model_validator
 
 
 class AudioSourceBase(BaseModel):
@@ -126,6 +126,14 @@ class AudioSegmentResponse(AudioSegmentInDB):
     """音频片段响应模型"""
     is_favorite: bool = False
     source_title: Optional[str] = None
+    audio_url: Optional[str] = None
+
+    @model_validator(mode="after")
+    def set_audio_url(self):
+        """将 oss_url 复制到 audio_url 以兼容前端"""
+        if self.oss_url:
+            self.audio_url = self.oss_url
+        return self
 
 
 class AudioUploadRequest(BaseModel):

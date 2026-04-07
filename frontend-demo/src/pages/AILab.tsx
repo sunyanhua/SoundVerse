@@ -70,7 +70,7 @@ export default function AILab() {
 
   const fetchRandomPrompts = async () => {
     try {
-      const prompts = await api.get<PresetPrompt[]>('/chat/preset-prompts/random?count=6');
+      const prompts = await api.get<PresetPrompt[]>('/v1/chat/preset-prompts/random?count=6');
       if (prompts && prompts.length > 0) {
         setPromptSuggestions(prompts.map(p => p.query_text));
       } else {
@@ -113,7 +113,7 @@ export default function AILab() {
         message_id: string;
         content: string;
         session_id: string;
-      }>('/chat/message', {
+      }>('/v1/chat/message', {
         content: message,
         session_id: sessionId,
       });
@@ -159,7 +159,7 @@ export default function AILab() {
     setLikedMessages(newLiked);
 
     try {
-      await api.put(`/chat/messages/${messageId}/like`, {
+      await api.put(`/v1/chat/messages/${messageId}/like`, {
         like: !isLiked,
         save_as_preset: !isLiked,
       });

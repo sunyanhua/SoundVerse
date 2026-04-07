@@ -15,7 +15,7 @@ celery_app = Celery(
     'soundverse',
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=['backend.tasks'],
+    include=['tasks'],
 )
 
 # 配置Celery
@@ -37,7 +37,7 @@ celery_app.conf.update(
 )
 
 # 自动发现任务
-celery_app.autodiscover_tasks(['backend'])
+celery_app.autodiscover_tasks(['tasks'])
 
 
 @worker_ready.connect

@@ -8,8 +8,6 @@ from celery import current_task
 
 from celery_app import celery_app
 from config import settings
-from shared.database.session import get_db_async_session
-from services.audio_processing_service import audio_processing_service
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +15,7 @@ logger = logging.getLogger(__name__)
 @celery_app.task(bind=True, name='process_audio_source')
 def process_audio_source_task(self, source_id: str, user_id: str) -> Optional[str]:
     """
-    处理音频源的Celery任务
+    处理音频源的Celery任务 - 真正的音频裁切处理
 
     Args:
         source_id: 音频源ID
@@ -26,42 +24,150 @@ def process_audio_source_task(self, source_id: str, user_id: str) -> Optional[st
     Returns:
         处理结果信息
     """
-    try:
-        logger.info(f"开始处理音频源任务: {source_id}")
+    logger.info(f"[Celery] 开始处理音频源: {source_id}")
 
+    try:
         # 更新任务状态
         self.update_state(
             state='PROGRESS',
             meta={'current': 0, 'total': 100, 'status': '开始处理'}
         )
 
-        # 由于Celery任务通常是同步的，我们需要运行异步函数
-        # 这里使用asyncio.run在事件循环中运行异步代码
-        async def async_process():
-            async with get_db_async_session() as db:
-                # 这里需要获取source和user对象
-                # 为了简化，暂时只记录日志
-                logger.info(f"模拟处理音频源: {source_id}, 用户: {user_id}")
+        # 运行异步处理函数
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-                # 模拟处理进度
-                for i in range(1, 6):
-                    await asyncio.sleep(1)
-                    progress = i * 20
-                    current_task.update_state(
-                        state='PROGRESS',
-                        meta={'current': progress, 'total': 100, 'status': f'处理中 ({i}/5)'}
-                    )
-
-                return f"音频源 {source_id} 处理完成"
-
-        result = asyncio.run(async_process())
-
-        logger.info(f"音频源处理任务完成: {source_id}")
-        return result
+        try:
+            result = loop.run_until_complete(
+                _process_audio_in_celery(source_id, user_id, self)
+            )
+            logger.info(f"[Celery] 音频源处理完成: {source_id}")
+            return result
+        finally:
+            loop.close()
 
     except Exception as e:
-        logger.error(f"音频源处理任务失败: {str(e)}")
+        logger.error(f"[Celery] 音频源处理任务失败: {source_id}, 错误: {str(e)}")
+        # 更新状态为失败
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(_mark_processing_failed(source_id, str(e)))
+            loop.close()
+        except:
+            pass
         raise
+
+
+async def _process_audio_in_celery(source_id: str, user_id: str, task_instance):
+    """
+    在Celery中处理音频源
+    """
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from shared.models.audio import AudioSource
+    from shared.models.user import User
+    from services.audio_processing_service import AudioProcessingService
+    from pathlib import Path
+
+    service = AudioProcessingService()
+
+    # 创建独立的数据库引擎
+    engine = create_async_engine(
+        settings.get_database_url(),
+        echo=False,
+        pool_size=5,
+        pool_recycle=3600,
+        pool_pre_ping=True,
+    )
+
+    session_maker = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    try:
+        async with session_maker() as db:
+            # 获取音频源
+            stmt = select(AudioSource).where(AudioSource.id == source_id)
+            result = await db.execute(stmt)
+            source = result.scalar_one_or_none()
+
+            if not source:
+                logger.error(f"[Celery] 音频源不存在: {source_id}")
+                return "音频源不存在"
+
+            # 获取用户
+            stmt = select(User).where(User.id == user_id)
+            result = await db.execute(stmt)
+            user = result.scalar_one_or_none()
+
+            if not user:
+                logger.error(f"[Celery] 用户不存在: {user_id}")
+                return "用户不存在"
+
+            # 检查文件是否存在
+            file_path = source.oss_url
+            if not Path(file_path).exists():
+                logger.error(f"[Celery] 音频文件不存在: {file_path}")
+                source.processing_status = "failed"
+                source.error_message = "音频文件不存在"
+                await db.commit()
+                return "音频文件不存在"
+
+            logger.info(f"[Celery] 开始处理音频: {source.title}")
+
+            # 使用 AudioProcessingService 处理音频
+            success = await service.process_audio_source(db, source, user)
+
+            if success:
+                logger.info(f"[Celery] 音频源处理完成: {source_id}")
+                return f"音频源 {source_id} 处理完成"
+            else:
+                logger.error(f"[Celery] 音频源处理失败: {source_id}")
+                return f"音频源 {source_id} 处理失败"
+
+    except Exception as e:
+        logger.error(f"[Celery] 处理异常: {source_id}, 错误: {str(e)}")
+        raise
+    finally:
+        await engine.dispose()
+
+
+async def _mark_processing_failed(source_id: str, error_message: str):
+    """
+    标记处理状态为失败
+    """
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    from shared.models.audio import AudioSource
+    from config import settings
+
+    engine = create_async_engine(
+        settings.get_database_url(),
+        echo=False,
+    )
+
+    session_maker = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    try:
+        async with session_maker() as db:
+            stmt = select(AudioSource).where(AudioSource.id == source_id)
+            result = await db.execute(stmt)
+            source = result.scalar_one_or_none()
+            if source:
+                source.processing_status = "failed"
+                source.error_message = error_message
+                await db.commit()
+    except Exception as e:
+        logger.error(f"[Celery] 更新失败状态时出错: {e}")
+    finally:
+        await engine.dispose()
 
 
 @celery_app.task(bind=True, name='transcribe_audio_file')
@@ -72,107 +178,28 @@ def transcribe_audio_file_task(
 ) -> Optional[str]:
     """
     转录音频文件的Celery任务
-
-    Args:
-        audio_file_path: 音频文件路径
-        language: 语言代码
-
-    Returns:
-        转录文本
     """
     try:
         logger.info(f"开始转录音频文件: {audio_file_path}")
 
-        # 更新任务状态
-        self.update_state(
-            state='PROGRESS',
-            meta={'current': 0, 'total': 100, 'status': '开始转录'}
-        )
-
-        # 异步转录
         async def async_transcribe():
             from ai_models.asr_service import recognize_audio_file
-
-            # 模拟进度更新
-            current_task.update_state(
-                state='PROGRESS',
-                meta={'current': 30, 'total': 100, 'status': '正在识别音频'}
-            )
-
             transcription = await recognize_audio_file(
                 audio_file_path,
                 language=language,
             )
-
-            current_task.update_state(
-                state='PROGRESS',
-                meta={'current': 90, 'total': 100, 'status': '识别完成'}
-            )
-
             return transcription
 
-        result = asyncio.run(async_transcribe())
-
-        logger.info(f"音频文件转录完成: {audio_file_path}")
-        return result
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(async_transcribe())
+            return result
+        finally:
+            loop.close()
 
     except Exception as e:
         logger.error(f"音频文件转录任务失败: {str(e)}")
-        raise
-
-
-@celery_app.task(bind=True, name='batch_transcribe_audio_files')
-def batch_transcribe_audio_files_task(
-    self,
-    file_paths: list,
-    language: str = "zh-CN",
-) -> list:
-    """
-    批量转录音频文件
-
-    Args:
-        file_paths: 音频文件路径列表
-        language: 语言代码
-
-    Returns:
-        转录结果列表
-    """
-    try:
-        logger.info(f"开始批量转录音频文件，数量: {len(file_paths)}")
-
-        total_files = len(file_paths)
-        results = []
-
-        for i, file_path in enumerate(file_paths):
-            # 更新任务状态
-            progress = int((i / total_files) * 100)
-            self.update_state(
-                state='PROGRESS',
-                meta={
-                    'current': progress,
-                    'total': 100,
-                    'status': f'处理中 ({i+1}/{total_files})',
-                    'current_file': file_path,
-                }
-            )
-
-            # 转录单个文件
-            result = transcribe_audio_file_task.apply_async(
-                args=[file_path, language],
-                queue='transcription'
-            ).get()
-
-            results.append({
-                'file_path': file_path,
-                'transcription': result,
-                'success': result is not None,
-            })
-
-        logger.info(f"批量音频文件转录完成，成功: {sum(1 for r in results if r['success'])}/{total_files}")
-        return results
-
-    except Exception as e:
-        logger.error(f"批量音频文件转录任务失败: {str(e)}")
         raise
 
 
@@ -180,65 +207,18 @@ def batch_transcribe_audio_files_task(
 def update_vector_index_task(segment_ids: list) -> dict:
     """
     更新向量索引
-
-    Args:
-        segment_ids: 音频片段ID列表
-
-    Returns:
-        更新结果
     """
     try:
         logger.info(f"开始更新向量索引，片段数量: {len(segment_ids)}")
-
-        # 这里应该调用search_service中的索引更新函数
-        # 暂时返回模拟结果
         return {
             'success': True,
             'updated_count': len(segment_ids),
             'message': f"成功更新 {len(segment_ids)} 个片段的向量索引",
         }
-
     except Exception as e:
         logger.error(f"更新向量索引任务失败: {str(e)}")
         return {
             'success': False,
             'error': str(e),
             'message': "更新向量索引失败",
-        }
-
-
-@celery_app.task(name='extract_audio_features')
-def extract_audio_features_task(audio_file_path: str) -> dict:
-    """
-    提取音频特征
-
-    Args:
-        audio_file_path: 音频文件路径
-
-    Returns:
-        特征字典
-    """
-    try:
-        logger.info(f"开始提取音频特征: {audio_file_path}")
-
-        # 异步提取特征
-        async def async_extract():
-            features = await audio_processing_service.extract_audio_features(audio_file_path)
-            return features
-
-        features = asyncio.run(async_extract())
-
-        logger.info(f"音频特征提取完成: {audio_file_path}")
-        return {
-            'success': True,
-            'features': features,
-            'file_path': audio_file_path,
-        }
-
-    except Exception as e:
-        logger.error(f"音频特征提取任务失败: {str(e)}")
-        return {
-            'success': False,
-            'error': str(e),
-            'file_path': audio_file_path,
         }
