@@ -38,16 +38,16 @@ export default function UploadStudio() {
     }
   }, [view]);
 
-  // 定时刷新节目列表（当有待处理或处理中的节目时）
+  // 定时刷新节目列表（当有处理中的节目时，每10秒刷新一次）
   useEffect(() => {
     if (view !== 'list') return;
 
     const hasProcessing = sources.some(
-      s => s.processing_status === 'pending' || s.processing_status === 'processing'
+      s => s.processing_status === 'processing'
     );
 
     if (hasProcessing) {
-      const interval = setInterval(loadSources, 5000);
+      const interval = setInterval(loadSources, 10000);
       return () => clearInterval(interval);
     }
   }, [view, sources]);
@@ -179,7 +179,7 @@ export default function UploadStudio() {
         clearIntervals();
         setProcessing(false);
         setStatusMessage(`处理失败: ${data.error_message || '未知错误'}`);
-        alert(`音频处理失败: ${data.error_message || '请重试'}`);
+        // 不显示弹窗，用户可以在节目列表中看到失败状态并继续其他操作
       }
     } catch (error) {
       console.error('检查处理状态失败:', error);

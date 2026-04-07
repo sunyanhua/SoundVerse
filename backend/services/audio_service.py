@@ -4,9 +4,17 @@
 import logging
 import uuid
 import asyncio
+import concurrent.futures
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Dict, Any
+
+# 创建线程池用于执行CPU密集型任务（音频处理）
+# 使用单独的线程池避免阻塞主事件循环
+_audio_processing_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="audio_processor"
+)
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -125,11 +133,18 @@ async def upload_audio(
 
     logger.info(f"用户 {user.id} 上传音频: {source.id}, 文件: {audio_file.filename}")
 
-    # 启动后台处理任务（真实处理）
+    # 启动后台处理任务（使用线程池，避免阻塞API事件循环）
     logger.info(f"准备启动后台处理任务: source_id={source.id}, user_id={user.id}")
     try:
-        task = asyncio.create_task(_process_audio_source_background(str(source.id), str(user.id)))
-        logger.info(f"后台处理任务已创建: task={task}")
+        # 在线程池中执行CPU密集型任务，不阻塞主事件循环
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(
+            _audio_processing_executor,
+            _run_process_audio_sync,
+            str(source.id),
+            str(user.id)
+        )
+        logger.info(f"后台处理任务已提交到线程池: source_id={source.id}")
     except Exception as e:
         logger.error(f"创建后台处理任务失败: {e}")
         raise
@@ -877,8 +892,14 @@ async def reprocess_audio_source(
         source.error_message = None
         await db.commit()
 
-        # 启动新的后台处理任务
-        asyncio.create_task(_process_audio_source_background(source.id, user.id))
+        # 启动新的后台处理任务（使用线程池，避免阻塞API事件循环）
+        loop = asyncio.get_event_loop()
+        loop.run_in_executor(
+            _audio_processing_executor,
+            _run_process_audio_sync,
+            str(source.id),
+            str(user.id)
+        )
 
         logger.info(f"音频源已重新启动处理: {source_id}")
         return True
@@ -887,3 +908,93 @@ async def reprocess_audio_source(
         logger.error(f"重新处理音频源失败: {source_id}, 错误: {e}")
         await db.rollback()
         raise
+
+def _run_process_audio_sync(source_id: str, user_id: str):
+    """
+    同步包装函数，用于在线程池中运行异步的音频处理任务
+
+    使用 asyncio.run() 确保所有异步代码在正确的事件循环中执行，
+    避免 "attached to a different loop" 错误
+    """
+    try:
+        # 使用 asyncio.run() 自动管理事件循环生命周期
+        # 这确保所有 asyncio 对象（如 Semaphore）都在同一个循环中创建
+        asyncio.run(_process_audio_source_background_isolated(source_id, user_id))
+    except Exception as e:
+        logger.error(f"线程池中的音频处理任务失败: source_id={source_id}, error={e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
+
+async def _process_audio_source_background_isolated(source_id: str, user_id: str):
+    """
+    后台处理音频源 - 在独立事件循环中运行
+
+    这是 _process_audio_source_background 的独立版本，
+    专门用于在线程池中执行，避免事件循环冲突
+    """
+    from shared.models.user import User
+    from services.audio_processing_service import AudioProcessingService
+    from shared.database.session import async_session_maker, init_db
+    from sqlalchemy import select
+    from pathlib import Path
+
+    service = AudioProcessingService()
+
+    try:
+        logger.info(f"[独立线程任务] 开始执行: source_id={source_id}, user_id={user_id}")
+
+        # 确保数据库已初始化
+        await init_db()
+
+        # 创建新的数据库会话
+        async with async_session_maker() as db:
+            # 获取音频源
+            stmt = select(AudioSource).where(AudioSource.id == source_id)
+            result = await db.execute(stmt)
+            source = result.scalar_one_or_none()
+
+            if not source:
+                logger.error(f"音频源不存在: {source_id}")
+                return
+
+            # 获取用户
+            stmt = select(User).where(User.id == user_id)
+            result = await db.execute(stmt)
+            user = result.scalar_one_or_none()
+
+            if not user:
+                logger.error(f"用户不存在: {user_id}")
+                return
+
+            # 检查文件是否存在
+            file_path = source.oss_url
+            if not Path(file_path).exists():
+                logger.error(f"音频文件不存在: {file_path}")
+                source.processing_status = "failed"
+                source.error_message = "音频文件不存在"
+                await db.commit()
+                return
+
+            # 使用 AudioProcessingService 处理音频
+            success = await service.process_audio_source(db, source, user)
+
+            if success:
+                logger.info(f"音频源处理完成: {source_id}")
+            else:
+                logger.error(f"音频源处理失败: {source_id}")
+
+    except Exception as e:
+        logger.error(f"音频源后台处理失败: {source_id}, 错误: {str(e)}")
+        # 尝试更新状态为失败
+        try:
+            async with async_session_maker() as db:
+                stmt = select(AudioSource).where(AudioSource.id == source_id)
+                result = await db.execute(stmt)
+                source = result.scalar_one_or_none()
+                if source:
+                    source.processing_status = "failed"
+                    source.error_message = str(e)
+                    await db.commit()
+        except Exception as inner_e:
+            logger.error(f"更新失败状态时出错: {inner_e}")

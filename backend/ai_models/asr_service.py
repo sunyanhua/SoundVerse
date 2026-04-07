@@ -501,7 +501,16 @@ class ASRService:
         Returns:
             识别结果列表（与输入列表顺序一致）
         """
-        semaphore = asyncio.Semaphore(max_concurrent)
+        # 使用当前运行的事件循环创建信号量
+        # 确保在线程池中也能正确工作
+        try:
+            loop = asyncio.get_running_loop()
+            semaphore = asyncio.Semaphore(max_concurrent)
+        except RuntimeError:
+            # 如果没有运行的事件循环，创建一个新的
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            semaphore = asyncio.Semaphore(max_concurrent)
 
         async def recognize_with_semaphore(file_path: str) -> Optional[str]:
             async with semaphore:
