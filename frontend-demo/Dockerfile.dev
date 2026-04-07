@@ -1,0 +1,14 @@
+# 前端开发环境 Dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 先复制 package*.json 并使用 package-lock.json 安装
+COPY package*.json ./
+RUN npm ci --legacy-peer-deps
+
+# 暴露 Vite 开发服务器端口
+EXPOSE 5173
+
+# 开发模式启动（热重载）- 使用 npx 确保能找到 vite
+CMD ["sh", "-c", "export PATH=\"$PATH:/app/node_modules/.bin\" && npm run dev -- --host 0.0.0.0"]

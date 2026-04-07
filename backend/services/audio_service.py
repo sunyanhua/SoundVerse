@@ -473,14 +473,30 @@ async def delete_audio_source(
     if not user.is_admin:
         return False
 
-    # 在实际实现中，这里应该：
-    # 1. 删除OSS上的文件
-    # 2. 删除数据库记录
-    # 3. 删除相关索引
+    # 删除关联的语弹片段
+    stmt_segments = select(AudioSegment).where(AudioSegment.source_id == source_id)
+    result_segments = await db.execute(stmt_segments)
+    segments = result_segments.scalars().all()
 
-    # 这里只标记为删除
+    segment_count = 0
+    for segment in segments:
+        # 从向量索引中删除
+        try:
+            from services.search_service import delete_segment_from_index
+            await delete_segment_from_index(str(segment.id))
+        except Exception as e:
+            logger.warning(f"删除向量索引失败 segment_id={segment.id}: {e}")
+
+        # 删除数据库记录
+        await db.delete(segment)
+        segment_count += 1
+
+    logger.info(f"删除音频源 {source_id}: 删除了 {segment_count} 个语弹片段")
+
+    # 标记音频源为删除状态
     source.processing_status = "deleted"
     await db.commit()
+
 
     return True
 

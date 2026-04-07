@@ -40,10 +40,6 @@ import hashlib
 from typing import Set, Dict, Optional
 from dataclasses import dataclass, field
 
-# 添加项目根目录到 Python 路径
-backend_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(backend_dir))
-
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from shared.database.session import init_db, async_session_maker, engine

@@ -36,128 +36,22 @@
 - **单步执行原则**：在非交互式自动化（Butler）模式下，一个进程 = 一个原子任务。禁止在未重新启动进程的情况下自行处理后续任务，即便后续任务已在 TASK_REPORT.json 中标记为 WAITING。
 - **强制退出机制**：完成指定 Step 后的第一动作是更新进度文档，第二动作是立即终止会话，严禁跨步执行。
 
-## 常用开发命令
 
-### 前端开发（frontend-demo）
+## 🐳 Docker Development Protocol (Strict)
+- **Identity**: Project uses `docker-compose.yml` with project name `soundverse`.
+- **Hot-Reload**: 
+  - Backend (API): Uses `uvicorn --reload`. Sources mapped to `/app`.
+  - Frontend: Uses `npm run dev` with HMR. Sources mapped to `/app`.
+  - **启用 Watch 模式**: 已配置 `develop.watch` 自动同步源码变更
+- **Zero-Restart Policy** (严格执行):
+  - **禁止**因源码改动而重启或重建容器
+  - **禁止**运行 `docker-compose up --build` 或 `restart` 来应用代码变更
+  - **信任热重载机制**: Uvicorn `--reload` 和 Vite HMR 会自动检测变更
+  - **唯一重建条件**: 仅当 `requirements.txt`, `package.json`, 或 `Dockerfile` 变更时才重建
+  - **修改后操作**: 保存文件后等待 1-2 秒，热重载会自动生效
+- **Container Names**: Fixed as `soundverse-api`, `soundverse-frontend-demo`, etc.
+- **故障排查**: 如热重载失效，检查日志而非重启容器
 
-```bash
-cd frontend-demo
-
-# 安装依赖
-npm install
-
-# 本地开发（热更新）
-npm run dev
-
-# 构建生产版本
-npm run build
-
-# 预览生产构建
-npm run preview
-
-# 代码检查
-npm run lint
-
-# 类型检查
-npm run typecheck
-```
-
-### 后端开发
-
-```bash
-cd backend
-
-# 安装依赖（开发模式）
-pip install -e ".[dev]"
-
-# 运行本地开发服务器
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# 数据库迁移（如果配置了 alembic）
-alembic upgrade head
-alembic revision --autogenerate -m "描述"
-
-# 代码质量工具
-black .                          # 代码格式化
-ruff check .                     # 代码检查
-mypy .                           # 类型检查
-pre-commit run --all             # 运行所有预提交钩子
-
-# 测试命令（tests 目录尚未创建）
-pytest                           # 运行所有测试
-pytest tests/test_auth.py -v     # 运行特定测试文件
-pytest -m "not slow"             # 跳过慢速测试
-```
-
-### Docker 开发环境
-
-```bash
-# 构建并启动所有服务（包括 frontend-demo 和 backend）
-docker-compose up -d
-
-# 查看服务状态
-docker-compose ps
-
-# 仅启动前端
-docker-compose up -d frontend-demo
-
-# 仅启动后端服务
-docker-compose up -d api celery-worker celery-beat
-
-# 前端访问地址
-# http://localhost:5173
-
-# 后端 API 地址
-# http://localhost:8000/docs
-
-# 查看日志
-docker-compose logs -f frontend-demo
-docker-compose logs -f api
-docker-compose logs -f celery-worker
-
-# 重启前端服务
-docker-compose restart frontend-demo
-
-# 重新构建前端镜像
-docker-compose build frontend-demo
-
-# 停止所有服务
-docker-compose down
-
-# 停止并删除数据卷
-docker-compose down -v
-```
-
-### 批量操作脚本
-
-```bash
-cd backend
-
-# 批量音频入库
-python -m scripts.mass_ingest
-
-# 同步向量到 DashVector
-python -m scripts.sync_dashvector
-
-# 数据库完整性审计
-python -m scripts.audit_db
-
-# 处理完整音频流程
-python -m scripts.process_full_pipeline
-```
-
-
-## 配置管理
-
-所有配置通过 `.env` 文件中的环境变量管理：
-
-```bash
-# 复制模板文件
-cp .env.example .env
-# 编辑 .env 文件填写实际配置值
-```
-
-主要配置项参考 [config.py](backend/config.py)。
 
 ## 项目文档与测试管理制度
 

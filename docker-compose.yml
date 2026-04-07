@@ -1,8 +1,10 @@
+name: soundverse  # 🚀 这行能彻底解决容器名带随机 ID 的问题
+
 services:
   # MySQL数据库
   mysql:
     image: mysql:8.0
-    container_name: SoundVerse-mysql
+    container_name: soundverse-mysql
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: soundverse
@@ -22,12 +24,12 @@ services:
       timeout: 20s
       retries: 10
     networks:
-      - SoundVerse-network
+      - soundverse-network
 
   # Redis缓存
   redis:
     image: redis:7-alpine
-    container_name: SoundVerse-redis
+    container_name: soundverse-redis
     ports:
       - "63792:6379"
     volumes:
@@ -39,14 +41,14 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - SoundVerse-network
+      - soundverse-network
 
   # 后端API服务
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
-    container_name: SoundVerse-api
+    container_name: soundverse-api
     depends_on:
       mysql:
         condition: service_healthy
@@ -70,23 +72,28 @@ services:
       - ./backend:/app
       - ./backend/logs:/app/logs
       - ./backend/data:/app/data
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app
+          ignore:
+            - backend/logs/
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload # 确保有 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     networks:
-      - SoundVerse-network
+      - soundverse-network
 
   # Celery Worker
   celery-worker:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
-    container_name: SoundVerse-celery-worker
+    container_name: soundverse-celery-worker
     depends_on:
       - redis
       - mysql
@@ -104,20 +111,21 @@ services:
       - ./.env
     volumes:
       - ./backend:/app
-      - ./backend/logs:/app/logs
-      - ./backend/data:/app/data
-      - /etc/localtime:/etc/localtime:ro
-      - /etc/timezone:/etc/timezone:ro
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app
     command: celery -A tasks.celery_app worker --loglevel=info --concurrency=4
     networks:
-      - SoundVerse-network
+      - soundverse-network
 
   # Celery Beat (定时任务)
   celery-beat:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
-    container_name: SoundVerse-celery-beat
+    container_name: soundverse-celery-beat
     depends_on:
       - redis
       - mysql
@@ -141,12 +149,12 @@ services:
       - /etc/timezone:/etc/timezone:ro
     command: celery -A tasks.celery_app beat --loglevel=info
     networks:
-      - SoundVerse-network
+      - soundverse-network
 
   # Prometheus监控
   prometheus:
     image: prom/prometheus:latest
-    container_name: SoundVerse-prometheus
+    container_name: soundverse-prometheus
     ports:
       - "9092:9090"
     volumes:
@@ -160,16 +168,17 @@ services:
       - '--storage.tsdb.retention.time=200h'
       - '--web.enable-lifecycle'
     networks:
-      - SoundVerse-network
+      - soundverse-network
 
   # Auto Ingest Service - 本地音频自动入库
   auto-ingest:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
-    container_name: SoundVerse-auto-ingest
+    container_name: soundverse-auto-ingest
     command: python -m scripts.auto_ingest /app/data/auto_import --interval 30 --on-complete move --max-concurrent 2
     volumes:
+      - ./backend:/app
       - ./backend/data/auto_import:/app/data/auto_import
       - ./backend/logs:/app/logs
       - ./backend/data/uploads:/app/data/uploads
@@ -179,41 +188,52 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - DATABASE_URL=mysql+asyncmy://soundverse:password@mysql:3306/soundverse
+      - DATABASE_URL=mysql+aiomysql://soundverse:password@mysql:3306/soundverse
       - REDIS_URL=redis://redis:6379/0
       - ENVIRONMENT=development
     networks:
-      - SoundVerse-network
+      - soundverse-network
     restart: unless-stopped
 
   # Frontend Demo UI
   frontend-demo:
     build:
       context: ./frontend-demo
-      dockerfile: Dockerfile
-    container_name: SoundVerse-frontend-demo
+      dockerfile: Dockerfile.dev
+    container_name: soundverse-frontend-demo
     ports:
       - "5173:5173"
-    depends_on:
-      api:
-        condition: service_started
+    volumes:
+      - ./frontend-demo/src:/app/src
+      - ./frontend-demo/public:/app/public
+      - ./frontend-demo/index.html:/app/index.html
+      - ./frontend-demo/vite.config.ts:/app/vite.config.ts
+      - ./frontend-demo/package.json:/app/package.json
+      - ./frontend-demo/tsconfig.json:/app/tsconfig.json
+      - ./frontend-demo/tsconfig.app.json:/app/tsconfig.app.json
+      - ./frontend-demo/tsconfig.node.json:/app/tsconfig.node.json
+      - ./frontend-demo/tailwind.config.js:/app/tailwind.config.js
+      - ./frontend-demo/postcss.config.js:/app/postcss.config.js
+      - ./frontend-demo/eslint.config.js:/app/eslint.config.js
+      - frontend_node_modules:/app/node_modules
     environment:
-      - NODE_ENV=production
-    networks:
-      - SoundVerse-network
+      - NODE_ENV=development
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5173"]
       interval: 30s
       timeout: 3s
-      start_period: 40s
-      retries: 3
+      start_period: 60s
+      retries: 5
+    networks:
+      - soundverse-network
 
 volumes:
   mysql_data:
   redis_data:
   prometheus_data:
   grafana_data:
+  frontend_node_modules:
 
 networks:
-  SoundVerse-network:
+  soundverse-network:
     driver: bridge
