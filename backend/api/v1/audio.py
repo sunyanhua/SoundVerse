@@ -32,6 +32,7 @@ from services.audio_service import (
     get_audio_stats,
     get_user_audio_sources,
     reprocess_audio_source,
+    delete_audio_segment,
 )
 from .auth import get_current_active_user, get_current_user_optional
 from config import settings
@@ -264,6 +265,39 @@ async def delete_source(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="删除音频源失败",
+        )
+
+
+@router.delete("/segment/{segment_id}")
+async def delete_segment(
+    segment_id: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    删除语弹（级联删除：数据、向量索引、物理文件）
+    仅限管理员或语弹上传者
+    """
+    try:
+        success = await delete_audio_segment(db, segment_id, current_user)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="没有权限删除此语弹",
+            )
+        return {"message": "语弹删除成功"}
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除语弹失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="删除语弹失败",
         )
 
 

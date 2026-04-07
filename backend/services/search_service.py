@@ -501,3 +501,10 @@ async def get_search_stats() -> dict:
     获取搜索统计信息
     """
     return await search_service.get_index_stats()
+
+
+async def delete_segment_from_index(segment_id: str) -> bool:
+    """
+    从向量索引中删除音频片段
+    """
+    return await search_service.remove_segment(segment_id)

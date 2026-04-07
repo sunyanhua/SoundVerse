@@ -493,6 +493,30 @@ async def delete_audio_source(
 
     logger.info(f"删除音频源 {source_id}: 删除了 {segment_count} 个语弹片段")
 
+    # 删除物理文件（本地文件）
+    if source.oss_url:
+        try:
+            from pathlib import Path
+            import shutil
+            
+            file_path = Path(source.oss_url)
+            if file_path.exists():
+                # 如果是目录，删除整个目录
+                if file_path.is_dir():
+                    shutil.rmtree(file_path, ignore_errors=True)
+                    logger.info(f"删除音频源目录: {file_path}")
+                else:
+                    file_path.unlink(missing_ok=True)
+                    logger.info(f"删除音频源文件: {file_path}")
+                
+                # 删除上级目录（upload_id目录）
+                parent_dir = file_path.parent
+                if parent_dir.exists() and parent_dir.name != "uploads":
+                    shutil.rmtree(parent_dir, ignore_errors=True)
+                    logger.info(f"删除音频源上级目录: {parent_dir}")
+        except Exception as e:
+            logger.warning(f"删除物理文件失败: {e}")
+
     # 标记音频源为删除状态
     source.processing_status = "deleted"
     await db.commit()
@@ -933,7 +957,24 @@ async def reprocess_audio_source(
         pass
 
     try:
-        # 删除原有的语弹片段
+        # 查询原有的语弹片段（用于删除向量索引）
+        stmt_segments = select(AudioSegment).where(AudioSegment.source_id == source_id)
+        result_segments = await db.execute(stmt_segments)
+        segments = result_segments.scalars().all()
+
+        # 删除向量索引
+        segment_count = 0
+        for segment in segments:
+            try:
+                from services.search_service import delete_segment_from_index
+                await delete_segment_from_index(str(segment.id))
+            except Exception as e:
+                logger.warning(f"删除向量索引失败 segment_id={segment.id}: {e}")
+            segment_count += 1
+
+        logger.info(f"重新裁切音频源 {source_id}: 清理了 {segment_count} 个语弹的向量索引")
+
+        # 删除语弹数据库记录
         delete_stmt = delete(AudioSegment).where(AudioSegment.source_id == source_id)
         await db.execute(delete_stmt)
 
@@ -1093,3 +1134,67 @@ async def _process_audio_source_background_isolated(source_id: str, user_id: str
             await isolated_engine.dispose()
         except Exception as e:
             logger.error(f"清理数据库引擎失败: {e}")
+
+
+async def delete_audio_segment(
+    db: AsyncSession,
+    segment_id: str,
+    user: User,
+) -> bool:
+    """
+    删除单个语弹（级联删除：数据、向量索引、物理文件）
+
+    权限检查：
+    - 管理员可以删除任何语弹
+    - 普通用户只能删除自己上传的语弹
+    """
+    from shared.models.audio import AudioSegment
+    from shared.models.user import User
+    from sqlalchemy import select
+    from pathlib import Path
+    import shutil
+
+    # 查询语弹
+    stmt = select(AudioSegment).where(AudioSegment.id == segment_id)
+    result = await db.execute(stmt)
+    segment = result.scalar_one_or_none()
+
+    if not segment:
+        raise ValueError("语弹不存在")
+
+    # 检查权限
+    if not user.is_admin:
+        # 非管理员只能删除自己创建的语弹
+        if segment.user_id != user.id:
+            return False
+
+    try:
+        # 1. 删除向量索引
+        try:
+            from services.search_service import delete_segment_from_index
+            await delete_segment_from_index(str(segment_id))
+            logger.info(f"删除语弹向量索引: {segment_id}")
+        except Exception as e:
+            logger.warning(f"删除向量索引失败 segment_id={segment_id}: {e}")
+
+        # 2. 删除物理文件
+        if segment.oss_url:
+            try:
+                file_path = Path(segment.oss_url)
+                if file_path.exists():
+                    file_path.unlink(missing_ok=True)
+                    logger.info(f"删除语弹物理文件: {file_path}")
+            except Exception as e:
+                logger.warning(f"删除物理文件失败: {e}")
+
+        # 3. 删除数据库记录
+        await db.delete(segment)
+        await db.commit()
+
+        logger.info(f"用户 {user.id} 删除语弹 {segment_id}")
+        return True
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"删除语弹失败: {e}")
+        raise

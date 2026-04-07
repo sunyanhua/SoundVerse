@@ -25,6 +25,7 @@ services:
       retries: 10
     networks:
       - soundverse-network
+    restart: always  # 🚀 确保数据库永远在线
 
   # Redis缓存
   redis:
@@ -42,6 +43,7 @@ services:
       retries: 5
     networks:
       - soundverse-network
+    restart: always
 
   # 后端API服务
   api:
@@ -87,6 +89,7 @@ services:
       retries: 3
     networks:
       - soundverse-network
+    restart: unless-stopped
 
   # Celery Worker
   celery-worker:
@@ -119,6 +122,7 @@ services:
     command: celery -A tasks.celery_app worker --loglevel=info --concurrency=4
     networks:
       - soundverse-network
+    restart: unless-stopped
 
   # Celery Beat (定时任务)
   celery-beat:
@@ -150,6 +154,7 @@ services:
     command: celery -A tasks.celery_app beat --loglevel=info
     networks:
       - soundverse-network
+    restart: unless-stopped
 
   # Prometheus监控
   prometheus:
@@ -169,6 +174,7 @@ services:
       - '--web.enable-lifecycle'
     networks:
       - soundverse-network
+    restart: unless-stopped
 
   # Auto Ingest Service - 本地音频自动入库
   auto-ingest:
@@ -226,6 +232,7 @@ services:
       retries: 5
     networks:
       - soundverse-network
+    restart: unless-stopped
 
 volumes:
   mysql_data:
