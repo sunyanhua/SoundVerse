@@ -23,8 +23,8 @@ class SegmentQualityChecker:
     def __init__(self):
         # 最小中文字符数（放宽到3字，允许短句）
         self.min_chinese_chars = 3
-        # 最大重复比例（重复字符占总字符的比例）
-        self.max_repeat_ratio = 0.6
+        # 最大重复比例（放宽到0.8，因为广播节目ASR可能有重复）
+        self.max_repeat_ratio = 0.8
         # 最小标点符号数
         self.min_punctuation = 0
         # 句子结束标点

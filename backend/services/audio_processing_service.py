@@ -761,6 +761,41 @@ class AudioProcessingService:
             # 返回原始片段
             return [(s, e, t) for s, e, t in segments if t and e > s]
 
+    def _is_host_intro_pattern(self, text: str) -> bool:
+        """
+        检测文本是否是广播节目主持人介绍模式
+
+        检测模式：
+        1. 包含"我是XXX"（主持人自我介绍）
+        2. 包含"欢迎收听"（节目开场）
+        3. 包含"大家好"（问候语）
+        4. 短句（通常<6秒）
+
+        Args:
+            text: 文本内容
+
+        Returns:
+            是否是主持人介绍模式
+        """
+        if not text or len(text) < 3:
+            return False
+
+        intro_patterns = [
+            r'我是\s*[一-龥]{1,6}',  # 我是XXX（2-6个汉字名字）
+            r'欢迎收听',
+            r'大家好',
+            r'听众朋友',
+            r'主持人',
+            r'我是主播',
+        ]
+
+        import re
+        for pattern in intro_patterns:
+            if re.search(pattern, text):
+                return True
+
+        return False
+
     def _merge_short_segments(
         self,
         segments: List[Tuple[float, float, str]],
@@ -785,9 +820,9 @@ class AudioProcessingService:
 
         merged = []
         i = 0
-        merge_threshold = 5.0  # 小于5秒视为短句
-        max_gap = 1.0  # 间隔小于1秒视为连续
-        max_merged_duration = 20.0  # 合并后最大时长
+        merge_threshold = 6.0  # 小于6秒视为短句（平衡值）
+        max_gap = 1.5  # 间隔小于1.5秒视为连续（适中）
+        max_merged_duration = 20.0  # 合并后最大时长20秒
 
         # 记录输入信息便于调试
         logger.info(f"开始短句合并，共 {len(segments)} 段")
@@ -818,16 +853,24 @@ class AudioProcessingService:
 
                 # 检查下一句是否也是短句
                 # 策略：只合并短句，长句保持独立
-                if next_duration >= merge_threshold:
-                    # 下一句是长句，停止合并
+                # 广播节目特殊处理：主持人对话（我是XXX。你好，我是XXX）可以合并
+                current_is_host_intro = self._is_host_intro_pattern(current_text)
+                next_is_host_intro = self._is_host_intro_pattern(next_text)
+                is_dialogue_pattern = current_is_host_intro and next_is_host_intro
+
+                if next_duration >= merge_threshold and not is_dialogue_pattern:
+                    # 下一句是长句，且不是主持人对话模式，停止合并
                     logger.info(f"    下一句{j+1}是长句({next_duration:.1f}s)，停止合并")
                     break
 
                 # 检查间隔
                 gap = next_start - current_end
                 logger.info(f"    尝试合并段{j+1}: 间隔={gap:.2f}s, 下一句时长={next_duration:.1f}s")
-                if gap > max_gap:
-                    logger.info(f"    间隔{gap:.2f}s > {max_gap}s，停止合并")
+
+                # 广播节目特性：主持人对话间隔可稍长
+                effective_max_gap = max_gap * 1.5 if is_dialogue_pattern else max_gap
+                if gap > effective_max_gap:
+                    logger.info(f"    间隔{gap:.2f}s > {effective_max_gap}s，停止合并")
                     break
 
                 # 检查合并后时长
@@ -1147,12 +1190,14 @@ class AudioProcessingService:
 def deduplicate_text(text: str) -> str:
     """
     移除转录文本中连续重复的句子（精简为一句），并处理句子内部的冗余词
+    针对广播节目ASR特性优化：处理开头重复、语气词重复等
 
     处理示例：
     "坐在车里。坐在车里。" -> "坐在车里。"
     "你好你好" -> "你好"
     "今天天气不错。今天天气不错。" -> "今天天气不错。"
     "用智慧和真情拥抱协同。用智慧和真情拥抱协同。" -> "用智慧和真情拥抱协同。"
+    "他们，他们用智慧和..." -> "他们用智慧和..."
 
     Args:
         text: 原始转录文本
@@ -1165,7 +1210,15 @@ def deduplicate_text(text: str) -> str:
 
     import re
 
-    # 第一步：处理句子内部的重复词（如"你好你好" -> "你好"）
+    # 广播节目特殊处理：移除开头的语气词重复（如"他们，他们"）
+    # 模式1：重复的词 + 标点 + 同样的词（中文）
+    text = re.sub(r'^([\u4e00-\u9fff]{1,6})[，,、\s]+\1', r'\1', text)
+    # 模式2：重复的词 + 标点 + 同样的词（更宽松，包括英文/数字）
+    text = re.sub(r'^(\S{1,8})[，,、\s]+\1', r'\1', text)
+    # 模式3：处理多次重复（如"他们，他们，他们" -> "他们"）
+    text = re.sub(r'^([\u4e00-\u9fff]{1,6})([，,、\s]+\1)+', r'\1', text)
+
+    # 处理句子内部的重复词（如"你好你好" -> "你好"）
     def remove_internal_duplicates(sentence: str) -> str:
         """移除句子内部的重复词语"""
         if not sentence or len(sentence) < 2:
@@ -1239,13 +1292,34 @@ def deduplicate_text(text: str) -> str:
     deduped_sentences = []
     prev_sentence = None
 
+    def similarity(s1: str, s2: str) -> float:
+        """计算两个字符串的相似度（简化版）"""
+        if not s1 or not s2:
+            return 0.0
+        # 标准化：去除标点和空格
+        s1_clean = re.sub(r'[，,、。！？.!?\s]', '', s1)
+        s2_clean = re.sub(r'[，,、。！？.!?\s]', '', s2)
+        if not s1_clean or not s2_clean:
+            return 0.0
+        # 如果一个是另一个的子串，认为是相似
+        if s1_clean in s2_clean or s2_clean in s1_clean:
+            return min(len(s1_clean), len(s2_clean)) / max(len(s1_clean), len(s2_clean))
+        return 0.0
+
     for sentence in processed_sentences:
         # 标准化后比较（去除标点空格）
         normalized = re.sub(r'[，,、\s]', '', sentence)
         prev_normalized = re.sub(r'[，,、\s]', '', prev_sentence) if prev_sentence else ''
 
         # 检查是否与上一句相同（完全匹配或高度相似）
+        is_duplicate = False
         if normalized and normalized == prev_normalized:
+            is_duplicate = True
+        elif prev_sentence and similarity(sentence, prev_sentence) > 0.8:
+            # 相似度>80%认为是重复
+            is_duplicate = True
+
+        if is_duplicate:
             # 跳过重复的句子
             continue
         else:
