@@ -37,14 +37,12 @@ class AudioProcessingService:
         self.min_silence_len = 300  # 硬编码300ms
         self.silence_thresh = -35   # 硬编码-35dB
         self.keep_silence = settings.KEEP_SILENCE
-        self.min_segment_duration = 5.0  # 最小片段时长5秒（新目标）
-        self.max_segment_duration = 10.0  # 目标最大片段时长10秒
         self.sample_rate = settings.AUDIO_SAMPLE_RATE
         self.channels = settings.AUDIO_CHANNELS
-        # 语义聚拢参数
-        self.target_min_duration = 5.0  # 目标最小时长
-        self.target_max_duration = 10.0  # 目标最大时长
-        self.absolute_max_duration = 12.0  # 绝对最大时长
+        # 语义完整性优先的新参数
+        self.min_segment_duration = 2.0  # 最小片段时长2秒（短句允许存在）
+        self.soft_max_duration = 15.0  # 建议最大时长15秒（软性建议，非硬性切断）
+        self.absolute_max_duration = 20.0  # 绝对最大时长20秒（超过必须拆分）
         self.buffer_start = 0.2  # 起始提前200ms
         self.buffer_end = 0.3  # 结束延后300ms
 
@@ -321,7 +319,13 @@ class AudioProcessingService:
         audio_file_path: str,
     ) -> List[Tuple[float, float, str]]:
         """
-        基于ASR时间戳分割音频（以句子完整性为优先，去掉时长约束）
+        基于ASR时间戳分割音频（以句子完整性为优先，语义完整度 > 时长限制）
+
+        策略：
+        1. 获取词级/短句级ASR结果（带时间戳）
+        2. 按标点符号智能合并：以句号、问号、感叹号为强制边界
+        3. 短句（<3秒）允许存在，不强制合并
+        4. 长句（>15秒）优先在逗号/分号处拆分，非硬性时间切分
 
         Args:
             audio_file_path: 音频文件路径
@@ -331,61 +335,259 @@ class AudioProcessingService:
         """
         try:
             logger.info(f"开始基于ASR时间戳分割: {audio_file_path}")
-            logger.info("分割策略: 以句子完整性为优先，每个语弹一个完整句子")
+            logger.info("分割策略: 语义完整性优先，句号/问号/感叹号为强制边界")
 
-            # 1. 获取ASR带时间戳的识别结果
+            # 1. 获取ASR带时间戳的词级识别结果
             from ai_models.asr_service import asr_service
-            sentences = await asr_service.recognize_audio_with_timestamps(
+            word_timestamps = await asr_service.recognize_audio_with_word_timestamps(
                 audio_file_path,
                 language="zh-CN",
                 sample_rate=self.sample_rate,
                 format="mp3"
             )
 
-            if not sentences:
-                logger.warning(f"ASR未返回有效句子，回退到静音检测分割")
+            if not word_timestamps:
+                logger.warning(f"ASR未返回词级时间戳，回退到静音检测分割")
                 segments = await self._fallback_split_by_silence(audio_file_path)
-                # 为回退方案添加空文本
-                return [(start, end, "") for start, end in segments]
+                segments_with_text = [(start, end, "") for start, end in segments]
+                merged_segments = self._merge_short_segments(segments_with_text)
+                return merged_segments
 
-            logger.info(f"ASR识别成功，共 {len(sentences)} 个句子")
+            logger.info(f"ASR识别成功，共 {len(word_timestamps)} 个词/短句")
 
-            # 2. 加载音频用于静音检测（找句子边界）
-            audio = PydubAudioSegment.from_file(audio_file_path)
-            audio_duration = len(audio) / 1000.0  # 毫秒转秒
+            # 2. 按标点符号智能合并/拆分
+            segments = self._merge_by_punctuation(word_timestamps)
 
-            # 3. 为每个句子优化边界（基于静音检测找呼吸感）
-            optimized_segments = []
-            for i, sent in enumerate(sentences):
-                text = sent.get('text', '').strip()
-                start_time = sent.get('start_time', 0)
-                end_time = sent.get('end_time', 0)
+            logger.info(f"标点合并后，共 {len(segments)} 个语弹片段")
 
-                if not text or end_time <= start_time:
-                    continue
+            # 3. 处理超长语弹（>20秒必须拆分，>15秒建议拆分）
+            final_segments = self._split_long_segments(segments)
 
-                # 优化边界：在句子前后找静音点
-                optimized_start, optimized_end = await self._optimize_segment_boundaries(
-                    audio, start_time, end_time, i, len(sentences)
-                )
+            logger.info(f"长句处理后，最终共 {len(final_segments)} 个语弹片段")
 
-                optimized_segments.append((optimized_start, optimized_end, text))
-                logger.debug(f"句子 {i+1}: {optimized_start:.2f}s - {optimized_end:.2f}s, 文本: {text[:30]}...")
+            # 4. 批量优化边界（减少音频加载次数）
+            optimized_segments = await self._batch_optimize_boundaries(
+                audio_file_path, final_segments
+            )
 
-            logger.info(f"分割完成，共 {len(optimized_segments)} 个语弹片段")
+            # 5. 合并相邻短句（提高语义连贯性）
+            merged_segments = self._merge_short_segments(optimized_segments)
 
-            # 4. 验证结果
-            for i, (start, end, text) in enumerate(optimized_segments):
-                duration = end - start
-                logger.info(f"语弹 {i+1}: {start:.2f}s - {end:.2f}s (时长: {duration:.2f}s)")
-
-            return optimized_segments
+            return merged_segments
 
         except Exception as e:
             logger.error(f"ASR时间戳分割失败: {str(e)}")
             logger.info("回退到静音检测分割")
             segments = await self._fallback_split_by_silence(audio_file_path)
-            return [(start, end, "") for start, end in segments]
+            # 为回退片段添加空文本，并尝试合并短句
+            segments_with_text = [(start, end, "") for start, end in segments]
+            merged_segments = self._merge_short_segments(segments_with_text)
+            return merged_segments
+
+    def _merge_by_punctuation(self, word_timestamps: List[Dict]) -> List[Tuple[float, float, str]]:
+        """
+        按标点符号合并词级时间戳为完整句子
+
+        强制分割边界：句号(。)、问号(?)、感叹号(!)、分号(;)
+        可选分割边界：逗号(，)、顿号(、)（仅在超长时使用）
+        """
+        if not word_timestamps:
+            return []
+
+        segments = []
+        current_text = []
+        current_start = None
+        current_end = None
+
+        # 强制分割标点
+        force_split_puncts = {'。', '？', '！', '?', '!', '；', ';', '\n'}
+        # 可选分割标点（用于超长句拆分）
+        optional_split_puncts = {'，', ',', '、', '：', ':'}
+
+        # 合并相邻的短词（ASR有时会把一个词拆成多个）
+        merged_words = []
+        for word_info in word_timestamps:
+            text = word_info.get('text', '').strip()
+            start = word_info.get('start_time', 0)
+            end = word_info.get('end_time', 0)
+
+            if not text:
+                continue
+
+            # 如果当前词很短（<2字符）且与前一个词间隔很短，尝试合并
+            if merged_words and len(text) < 3 and (start - merged_words[-1]['end_time']) < 0.1:
+                merged_words[-1]['text'] += text
+                merged_words[-1]['end_time'] = end
+            else:
+                merged_words.append({'text': text, 'start_time': start, 'end_time': end})
+
+        for i, word_info in enumerate(merged_words):
+            text = word_info.get('text', '')
+            start = word_info.get('start_time', 0)
+            end = word_info.get('end_time', 0)
+
+            if not text:
+                continue
+
+            # 初始化当前片段
+            if current_start is None:
+                current_start = start
+                current_end = end
+            else:
+                current_end = end
+
+            current_text.append(text)
+
+            # 检查是否是强制分割点（句号、问号、感叹号）
+            if any(p in text for p in force_split_puncts):
+                # 完成当前片段
+                full_text = ''.join(current_text).strip()
+                if full_text:
+                    segments.append((current_start, current_end, full_text))
+                # 重置
+                current_text = []
+                current_start = None
+                current_end = None
+
+        # 处理剩余内容（结尾没有标点的片段）
+        if current_text:
+            full_text = ''.join(current_text).strip()
+            if full_text:
+                # 即使结尾没有标点，也保留为一个片段（确保结尾完整性）
+                segments.append((current_start, current_end, full_text))
+
+        return segments
+
+    def _split_long_segments(self, segments: List[Tuple[float, float, str]]) -> List[Tuple[float, float, str]]:
+        """
+        处理超长语弹（>20秒必须拆分，>15秒建议拆分）
+        优先在逗号、分号、顿号处拆分，保持语义相对完整
+        """
+        if not segments:
+            return []
+
+        final_segments = []
+        optional_split_puncts = {'，', ',', '、', '：', ':', '；', ';'}
+
+        for start, end, text in segments:
+            duration = end - start
+
+            # 如果小于15秒，直接保留
+            if duration <= self.soft_max_duration:
+                final_segments.append((start, end, text))
+                continue
+
+            # 15-20秒：尝试在可选标点处拆分
+            if duration <= self.absolute_max_duration:
+                # 查找中间位置的逗号/分号
+                split_pos = self._find_split_position(text, prefer_middle=True)
+                if split_pos > 0 and split_pos < len(text) - 1:
+                    # 根据字符位置比例估算时间分割点
+                    text_len = len(text)
+                    first_part_ratio = split_pos / text_len
+                    time_split = start + (end - start) * first_part_ratio
+
+                    first_text = text[:split_pos+1].strip()
+                    second_text = text[split_pos+1:].strip()
+
+                    if second_text and not any(second_text[-1] in p for p in {'。', '？', '！', '?', '!'}):
+                        second_text += '。'
+
+                    final_segments.append((start, time_split, first_text))
+                    final_segments.append((time_split, end, second_text))
+                    logger.info(f"长句({duration:.1f}s)在逗号处拆分为两段")
+                    continue
+
+            # 超过20秒或没找到合适的拆分点：强制按语义段落拆分
+            logger.info(f"超长句({duration:.1f}s)，按语义段落拆分")
+            sub_segments = self._force_split_by_semantic(text, start, end)
+            final_segments.extend(sub_segments)
+
+        return final_segments
+
+    def _find_split_position(self, text: str, prefer_middle: bool = True) -> int:
+        """
+        查找最佳拆分位置（逗号、分号等）
+        如果prefer_middle为True，优先找中间位置的标点
+        """
+        optional_split_puncts = {'，', ',', '、', '：', ':', '；', ';'}
+
+        positions = []
+        for i, char in enumerate(text):
+            if char in optional_split_puncts:
+                positions.append(i)
+
+        if not positions:
+            return -1
+
+        if prefer_middle and len(positions) > 1:
+            # 找中间位置的标点
+            middle_idx = len(positions) // 2
+            return positions[middle_idx]
+        else:
+            # 返回第一个
+            return positions[0]
+
+    def _force_split_by_semantic(self, text: str, start_time: float, end_time: float) -> List[Tuple[float, float, str]]:
+        """
+        强制按语义段落拆分（用于超长句）
+        尝试在逗号、分号处拆分，如果实在没有则按字数比例拆分
+        """
+        duration = end_time - start_time
+        optional_split_puncts = {'，', ',', '、', '：', ':', '；', ';'}
+        force_split_puncts = {'。', '？', '！', '?', '!', '\n'}
+
+        # 先尝试找所有可选标点
+        split_points = []
+        for i, char in enumerate(text):
+            if char in optional_split_puncts or char in force_split_puncts:
+                split_points.append(i)
+
+        if not split_points:
+            # 实在没有标点，按字数比例拆成2-3段
+            text_len = len(text)
+            if text_len < 20:
+                return [(start_time, end_time, text)]
+
+            # 拆成2段
+            mid = text_len // 2
+            first_text = text[:mid].strip() + '，'
+            second_text = text[mid:].strip()
+            if not any(second_text[-1] in p for p in force_split_puncts):
+                second_text += '。'
+
+            mid_time = start_time + (end_time - start_time) / 2
+            return [
+                (start_time, mid_time, first_text),
+                (mid_time, end_time, second_text)
+            ]
+
+        # 有标点，按标点拆分
+        segments = []
+        prev_end = 0
+        prev_time = start_time
+
+        for split_pos in split_points:
+            segment_text = text[prev_end:split_pos+1].strip()
+            if not segment_text:
+                continue
+
+            # 计算时间比例
+            ratio = (split_pos + 1) / len(text)
+            segment_end_time = start_time + duration * ratio
+
+            segments.append((prev_time, segment_end_time, segment_text))
+            prev_end = split_pos + 1
+            prev_time = segment_end_time
+
+        # 处理剩余部分
+        remaining = text[prev_end:].strip()
+        if remaining:
+            if not any(remaining[-1] in p for p in force_split_puncts):
+                remaining += '。'
+            segments.append((prev_time, end_time, remaining))
+
+        return segments
 
     async def _optimize_segment_boundaries(
         self,
@@ -478,12 +680,201 @@ class AudioProcessingService:
         except Exception as e:
             logger.warning(f"优化边界失败: {e}, 使用原始边界")
             return (start_time, end_time)
+
+    async def _batch_optimize_boundaries(
+        self,
+        audio_file_path: str,
+        segments: List[Tuple[float, float, str]],
+    ) -> List[Tuple[float, float, str]]:
+        """
+        批量优化所有片段边界（只加载一次音频，提高性能）
+
+        Args:
+            audio_file_path: 音频文件路径
+            segments: 原始片段列表 [(start, end, text), ...]
+
+        Returns:
+            优化后的片段列表
+        """
+        try:
+            # 只加载一次音频
+            audio = PydubAudioSegment.from_file(audio_file_path)
+            audio_duration_ms = len(audio)
+            audio_duration_sec = audio_duration_ms / 1000.0
+
+            optimized_segments = []
+
+            for i, (start_time, end_time, text) in enumerate(segments):
+                if not text or end_time <= start_time:
+                    continue
+
+                # 快速边界优化（简化版，减少计算）
+                start_ms = int(start_time * 1000)
+                end_ms = int(end_time * 1000)
+
+                # 起始边界：往前找100ms静音点（简化）
+                search_start = max(0, start_ms - 200)
+                if search_start < start_ms:
+                    pre_segment = audio[search_start:start_ms]
+                    pre_silences = detect_nonsilent(
+                        pre_segment, min_silence_len=100, silence_thresh=-40, seek_step=20
+                    )
+                    if pre_silences:
+                        last_sound_end = pre_silences[-1][1]
+                        optimized_start_ms = search_start + last_sound_end + 50
+                    else:
+                        optimized_start_ms = start_ms
+                else:
+                    optimized_start_ms = start_ms
+
+                # 结束边界：往后找100ms静音点（简化）
+                search_end = min(audio_duration_ms, end_ms + 300)
+                if end_ms < search_end:
+                    post_segment = audio[end_ms:search_end]
+                    post_silences = detect_nonsilent(
+                        post_segment, min_silence_len=100, silence_thresh=-40, seek_step=20
+                    )
+                    if post_silences:
+                        first_sound_start = post_silences[0][0]
+                        optimized_end_ms = end_ms + first_sound_start - 50
+                    else:
+                        optimized_end_ms = end_ms
+                else:
+                    optimized_end_ms = end_ms
+
+                # 转换为秒并确保合理范围
+                optimized_start = max(0.0, optimized_start_ms / 1000.0)
+                optimized_end = min(audio_duration_sec, optimized_end_ms / 1000.0)
+
+                # 确保至少保留原句子
+                optimized_start = min(optimized_start, start_time)
+                optimized_end = max(optimized_end, end_time)
+
+                optimized_segments.append((optimized_start, optimized_end, text))
+                duration = optimized_end - optimized_start
+                logger.info(f"语弹 {i+1}: {optimized_start:.2f}s - {optimized_end:.2f}s (时长: {duration:.2f}s), 文本: {text[:40]}...")
+
+            return optimized_segments
+
+        except Exception as e:
+            logger.warning(f"批量优化边界失败: {e}, 使用原始边界")
+            # 返回原始片段
+            return [(s, e, t) for s, e, t in segments if t and e > s]
+
+    def _merge_short_segments(
+        self,
+        segments: List[Tuple[float, float, str]],
+    ) -> List[Tuple[float, float, str]]:
+        """
+        合并相邻的短句，提高语义连贯性
+
+        合并策略：
+        1. 当前语弹时长 < 5秒 且下一个语弹时长 < 5秒
+        2. 两个语弹之间间隔 < 1秒（时间连续）
+        3. 合并后总时长 < 20秒（避免过长）
+        4. 合并后文本通顺（结尾无标点或结尾为逗号）
+
+        Args:
+            segments: 原始语弹列表 [(start, end, text), ...]
+
+        Returns:
+            合并后的语弹列表
+        """
+        if not segments or len(segments) < 2:
+            return segments
+
+        merged = []
+        i = 0
+        merge_threshold = 5.0  # 小于5秒视为短句
+        max_gap = 1.0  # 间隔小于1秒视为连续
+        max_merged_duration = 20.0  # 合并后最大时长
+
+        # 记录输入信息便于调试
+        logger.info(f"开始短句合并，共 {len(segments)} 段")
+        for idx, (s, e, t) in enumerate(segments):
+            logger.info(f"  输入段 {idx+1}: {s:.2f}s-{e:.2f}s (时长{e-s:.1f}s): {t[:30]}...")
+
+        while i < len(segments):
+            start, end, text = segments[i]
+            duration = end - start
+
+            # 如果是长句（>=5秒），直接保留
+            if duration >= merge_threshold:
+                merged.append((start, end, text))
+                i += 1
+                continue
+
+            # 短句，尝试与后续短句合并
+            current_start = start
+            current_end = end
+            current_text = text
+            current_duration = duration
+
+            # 向后查找可合并的短句
+            j = i + 1
+            while j < len(segments):
+                next_start, next_end, next_text = segments[j]
+                next_duration = next_end - next_start
+
+                # 检查下一句是否也是短句
+                # 策略：只合并短句，长句保持独立
+                if next_duration >= merge_threshold:
+                    # 下一句是长句，停止合并
+                    logger.info(f"    下一句{j+1}是长句({next_duration:.1f}s)，停止合并")
+                    break
+
+                # 检查间隔
+                gap = next_start - current_end
+                logger.info(f"    尝试合并段{j+1}: 间隔={gap:.2f}s, 下一句时长={next_duration:.1f}s")
+                if gap > max_gap:
+                    logger.info(f"    间隔{gap:.2f}s > {max_gap}s，停止合并")
+                    break
+
+                # 检查合并后时长
+                merged_duration = (current_end - current_start) + next_duration + gap
+                if merged_duration > max_merged_duration:
+                    break
+
+                # 短句合并策略：只要时长和间隔满足条件，就合并（忽略句号）
+                # 合并
+                current_end = next_end
+                current_text = current_text.strip()
+                next_text = next_text.strip()
+
+                # 智能连接文本：将结尾的句号替换为逗号
+                if current_text.endswith(('。', '？', '！', '.', '?', '!')):
+                    current_text = current_text[:-1] + '，'
+                elif not current_text.endswith(('，', ',', '、')):
+                    current_text += '，'
+
+                # 处理下一句的开头
+                if next_text.startswith(('，', ',', '、')):
+                    next_text = next_text[1:].strip()
+
+                current_text += next_text
+
+                current_duration = current_end - current_start
+                logger.info(f"    成功合并段{j+1}，当前总时长: {current_duration:.1f}s")
+                j += 1
+
+                # 如果合并后已成为长句，停止合并
+                if current_duration >= merge_threshold:
+                    logger.info(f"    合并后已成为长句({current_duration:.1f}s)，停止合并")
+                    break
+
+            merged.append((current_start, current_end, current_text))
+            logger.info(f"  输出段: {current_start:.2f}s-{current_end:.2f}s (时长{current_duration:.1f}s): {current_text[:40]}...")
+            i = j if j > i else i + 1
+
+        logger.info(f"短句合并完成: {len(segments)}段 -> {len(merged)}段")
+        return merged
+
     async def _fallback_split_by_silence(
         self,
         audio_file_path: str,
     ) -> List[Tuple[float, float]]:
         """
-        回退方案：基于静音检测分割音频
+        回退方案：基于静音检测分割音频（语义完整性优先，无硬性时长限制）
         """
         try:
             logger.info(f"使用静音检测回退分割: {audio_file_path}")
@@ -511,20 +902,47 @@ class AudioProcessingService:
                 end_sec = end_ms / 1000.0
                 duration = end_sec - start_sec
 
-                # 过滤过短的片段
+                # 过滤过短的片段（小于2秒）
                 if duration < self.min_segment_duration:
                     continue
 
-                # 强制分割过长的片段（硬性8秒限制）
-                if duration > self.max_segment_duration:
-                    # 按max_segment_duration步长切割
-                    num_splits = int(np.ceil(duration / self.max_segment_duration))
-                    for i in range(num_splits):
-                        part_start = start_sec + i * self.max_segment_duration
-                        part_end = min(start_sec + (i + 1) * self.max_segment_duration, end_sec)
-                        # 确保最小片段时长
-                        if part_end - part_start >= self.min_segment_duration:
-                            ranges_in_seconds.append((part_start, part_end))
+                # 超长片段（>20秒）尝试在静音点拆分
+                if duration > self.absolute_max_duration:
+                    # 查找中间区域的静音点
+                    mid_time = (start_sec + end_sec) / 2
+                    mid_ms = int(mid_time * 1000)
+                    window_ms = 3000  # 前后3秒窗口查找静音点
+
+                    search_start = max(start_ms, mid_ms - window_ms)
+                    search_end = min(end_ms, mid_ms + window_ms)
+                    search_segment = audio[search_start:search_end]
+
+                    # 在窗口内查找静音
+                    silences = detect_nonsilent(
+                        search_segment,
+                        min_silence_len=200,
+                        silence_thresh=-40,
+                        seek_step=50
+                    )
+
+                    if silences and len(silences) >= 2:
+                        # 在静音区间找到拆分点
+                        for i in range(len(silences) - 1):
+                            if silences[i+1][0] - silences[i][1] > 200:  # 有200ms以上静音
+                                split_offset = silences[i][1]
+                                split_time = (search_start + split_offset) / 1000.0
+
+                                # 确保拆分段落不小于2秒
+                                if split_time - start_sec >= self.min_segment_duration and \
+                                   end_sec - split_time >= self.min_segment_duration:
+                                    ranges_in_seconds.append((start_sec, split_time))
+                                    ranges_in_seconds.append((split_time, end_sec))
+                                    logger.info(f"超长片段({duration:.1f}s)在静音点拆分为两段")
+                                    break
+                        else:
+                            ranges_in_seconds.append((start_sec, end_sec))
+                    else:
+                        ranges_in_seconds.append((start_sec, end_sec))
                 else:
                     ranges_in_seconds.append((start_sec, end_sec))
 
@@ -766,12 +1184,42 @@ def deduplicate_text(text: str) -> str:
 
         return sentence
 
-    # 第二步：分割句子
-    # 更全面的中文句子分隔符：句号、感叹号、问号、分号、逗号、顿号、换行、空格
-    sentence_delimiters = r'[。！？；，、\n\s]+'
+    # 辅助函数：移除句子内部的重复短语（用逗号/顿号分隔的重复）
+    def remove_duplicate_phrases(sentence: str) -> str:
+        """移除句子中用逗号分隔的重复短语"""
+        if not sentence or len(sentence) < 4:
+            return sentence
+
+        # 按逗号/顿号分割
+        parts = re.split(r'[，,、]', sentence)
+        parts = [p.strip() for p in parts if p.strip()]
+
+        if len(parts) < 2:
+            return sentence
+
+        # 移除连续重复的片段
+        unique_parts = []
+        prev_part = None
+        for part in parts:
+            # 标准化后比较
+            normalized = re.sub(r'\s+', '', part)
+            prev_normalized = re.sub(r'\s+', '', prev_part) if prev_part else ''
+
+            if normalized != prev_normalized:
+                unique_parts.append(part)
+                prev_part = part
+
+        # 重新组合
+        if len(unique_parts) == 1:
+            return unique_parts[0]
+        return '，'.join(unique_parts)
+
+    # 第二步：先用句号/问号/感叹号分割句子（保留逗号在句子内部）
+    # 这样 "A。A。" 会被正确识别为重复，而 "A，B。" 不会
+    sentence_delimiters = r'[。！？.!?\n]+'
     sentences = re.split(sentence_delimiters, text)
 
-    # 过滤空句子
+    # 过滤空句子并保留原始标点信息
     sentences = [s.strip() for s in sentences if s.strip()]
 
     if not sentences:
@@ -780,17 +1228,24 @@ def deduplicate_text(text: str) -> str:
     # 第三步：处理每个句子的内部重复
     processed_sentences = []
     for sentence in sentences:
+        # 先去除内部重复词
         processed = remove_internal_duplicates(sentence)
+        # 再去除句子内部的逗号重复（如 "A，A" -> "A"）
+        processed = remove_duplicate_phrases(processed)
         if processed:
             processed_sentences.append(processed)
 
-    # 第四步：移除连续重复的句子（只保留第一次出现）
+    # 第四步：移除连续重复的句子（完全匹配或相似度极高）
     deduped_sentences = []
     prev_sentence = None
 
     for sentence in processed_sentences:
-        # 检查是否与上一句相同（完全匹配）
-        if sentence == prev_sentence:
+        # 标准化后比较（去除标点空格）
+        normalized = re.sub(r'[，,、\s]', '', sentence)
+        prev_normalized = re.sub(r'[，,、\s]', '', prev_sentence) if prev_sentence else ''
+
+        # 检查是否与上一句相同（完全匹配或高度相似）
+        if normalized and normalized == prev_normalized:
             # 跳过重复的句子
             continue
         else:
@@ -798,12 +1253,13 @@ def deduplicate_text(text: str) -> str:
             deduped_sentences.append(sentence)
             prev_sentence = sentence
 
-    # 第五步：重新组合句子，使用句号连接
-    result = '。'.join(deduped_sentences)
-
-    # 如果原始文本以句号结尾，且结果非空，添加句号
-    if text.strip().endswith('。') and result and not result.endswith('。'):
-        result += '。'
+    # 第五步：重新组合句子，智能使用标点
+    # 策略：单句用句号；多句时，前面用逗号连接，最后一句用句号结尾
+    if len(deduped_sentences) == 1:
+        result = deduped_sentences[0] + '。'
+    else:
+        # 多句情况：除最后一句外，其他句之间用逗号
+        result = '，'.join(deduped_sentences[:-1]) + '，' + deduped_sentences[-1] + '。'
 
     # 第六步：强制长度限制（不超过50个汉字）
     # 统计中文字符（Unicode范围）

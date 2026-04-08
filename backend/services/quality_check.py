@@ -21,14 +21,14 @@ class SegmentQualityChecker:
     """
 
     def __init__(self):
-        # 最小中文字符数
-        self.min_chinese_chars = 5
+        # 最小中文字符数（放宽到3字，允许短句）
+        self.min_chinese_chars = 3
         # 最大重复比例（重复字符占总字符的比例）
-        self.max_repeat_ratio = 0.5
+        self.max_repeat_ratio = 0.6
         # 最小标点符号数
         self.min_punctuation = 0
         # 句子结束标点
-        self.sentence_endings = ['。', '！', '？', '.', '!', '?']
+        self.sentence_endings = ['。', '！', '？', '.', '!', '?', '，', ',']
 
     def check_quality(self, text: str, duration: float) -> Tuple[bool, Dict[str, Any]]:
         """
@@ -91,17 +91,17 @@ class SegmentQualityChecker:
             "passed": punct_count >= self.min_punctuation
         }
 
-        # 检查5: 文本-时长比例（语速检查）
+        # 检查5: 文本-时长比例（语速检查，放宽范围）
         chars_per_second = chinese_chars / duration if duration > 0 else 0
         result["checks"]["speech_rate"] = {
             "value": chars_per_second,
-            "range": "2-8 字/秒",
-            "passed": 2 <= chars_per_second <= 8
+            "range": "1-10 字/秒",
+            "passed": 1 <= chars_per_second <= 10
         }
-        if chars_per_second < 1.5:
+        if chars_per_second < 0.8:
             result["passed"] = False
             result["reasons"].append(f"语速太慢({chars_per_second:.1f}字/秒)")
-        elif chars_per_second > 10:
+        elif chars_per_second > 12:
             result["passed"] = False
             result["reasons"].append(f"语速太快({chars_per_second:.1f}字/秒)")
 

@@ -2,11 +2,8 @@
 """
 清理已删除音频源的残留数据
 
-功能：
-1. 查找标记为 deleted 的音频源
-2. 清理关联的 OSS 文件
-3. 清理向量索引
-4. 真正删除数据库记录
+测试脚本 - 用于数据清理验证
+存放位置: test/scripts/ (符合测试管理制度)
 """
 
 import asyncio
@@ -15,12 +12,11 @@ import sys
 from pathlib import Path
 
 # 添加项目根目录到路径
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "backend"))
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.database.session import AsyncSessionLocal
 from shared.models.audio import AudioSource, AudioSegment
 from services.storage_service import StorageService
 from config import settings
@@ -39,7 +35,11 @@ async def cleanup_deleted_sources(dry_run: bool = True):
     Args:
         dry_run: 如果为 True，只打印日志不执行实际删除
     """
-    async with AsyncSessionLocal() as db:
+    # 确保数据库已初始化
+    import shared.database.session as db_session
+    await db_session.init_db()
+
+    async with db_session.async_session_maker() as db:
         # 1. 查找所有标记为 deleted 的音频源
         stmt = select(AudioSource).where(AudioSource.processing_status == "deleted")
         result = await db.execute(stmt)
@@ -52,7 +52,10 @@ async def cleanup_deleted_sources(dry_run: bool = True):
         logger.info(f"找到 {len(deleted_sources)} 个标记为 deleted 的音频源")
 
         if dry_run:
-            logger.info("【干运行模式】不执行实际删除，仅显示将要执行的操作")
+            logger.info("[干运行模式] 不执行实际删除，仅显示将要执行的操作")
+            for source in deleted_sources:
+                logger.info(f"  - {source.id}: {source.title}")
+            return
 
         storage_service = StorageService()
         total_segments = 0
@@ -117,24 +120,12 @@ async def cleanup_deleted_sources(dry_run: bool = True):
         # 6. 提交事务
         if not dry_run:
             await db.commit()
-            logger.info(f"\n✅ 清理完成: 删除了 {len(deleted_sources)} 个音频源, {total_segments} 个语弹")
+            logger.info(f"\n清理完成: 删除了 {len(deleted_sources)} 个音频源, {total_segments} 个语弹")
         else:
-            logger.info(f"\n📋 干运行完成: 将要删除 {len(deleted_sources)} 个音频源, {len(segments)} 个语弹")
+            logger.info(f"\n干运行完成: 将要删除 {len(deleted_sources)} 个音频源")
 
         if errors:
-            logger.warning(f"⚠️  清理过程中出现 {len(errors)} 个错误")
-            for error in errors[:10]:  # 只显示前10个错误
-                logger.warning(f"   - {error}")
-
-
-async def verify_oss_files():
-    """
-    验证数据库中记录的 OSS 文件是否实际存在
-    可用于发现孤儿文件
-    """
-    logger.info("\n=== 验证 OSS 文件存在性 ===")
-    logger.info("注意: 此功能需要 OSS API 支持，暂未实现")
-    # TODO: 实现 OSS 文件存在性验证
+            logger.warning(f"清理过程中出现 {len(errors)} 个错误")
 
 
 def main():
@@ -151,7 +142,7 @@ def main():
     if args.dry_run:
         asyncio.run(cleanup_deleted_sources(dry_run=True))
     elif args.force:
-        confirm = input("⚠️  确认要执行实际删除操作吗？此操作不可恢复！\n输入 'yes' 继续: ")
+        confirm = input("确认要执行实际删除操作吗？此操作不可恢复！\n输入 'yes' 继续: ")
         if confirm.lower() == 'yes':
             asyncio.run(cleanup_deleted_sources(dry_run=False))
         else:

@@ -51,6 +51,8 @@
 - [test_deploy_functions.sh](./scripts/test_deploy_functions.sh) - 部署功能测试脚本
 - [test_slb_forwarding.sh](./scripts/test_slb_forwarding.sh) - SLB转发功能测试脚本
 - [test_upload.py](./scripts/test_upload.py) - 音频上传流程测试脚本
+- [cleanup_deleted_sources.py](./scripts/cleanup_deleted_sources.py) - 已删除音频源数据清理脚本
+- [verify_deletion.py](./scripts/verify_deletion.py) - 音频删除完整性验证脚本
 
 ## 使用规范
 

@@ -73,6 +73,11 @@
 - [测试中心索引](test/README.md) - 测试数据和报告入口
 - [测试数据](test/data/) - 测试数据目录
 - [测试报告](test/reports/) - 测试报告目录
+- [测试脚本](test/scripts/) - **所有测试/验证脚本必须存放于此**
 
-**重要提示**: 所有文档和测试数据必须按制度存放，临时文件及时清理。
+**重要提示**:
+- 所有文档和测试数据必须按制度存放，临时文件及时清理
+- **测试脚本存放规范**：所有测试脚本、验证脚本、数据清理脚本等必须存放于 `test/scripts/` 目录，禁止存放在 `backend/scripts/` 或其他位置
+- `backend/scripts/` 仅用于业务逻辑脚本（如数据导入、定时任务等），不用于测试验证
+- **Docker 执行注意事项**：由于 `test/` 目录未挂载到容器，执行测试脚本时需要将其复制到 `backend/scripts/` 目录。执行后应删除副本，确保 `backend/scripts/` 不残留测试脚本。复制命令：`docker cp test/scripts/xxx.py soundverse-api:/app/scripts/`
 

@@ -127,11 +127,22 @@ class EmotionService:
 
         scores["neutral"] = max(0.0, 1.0 - total_score * 0.3)
 
+        # 英文标签映射到中文
+        emotion_cn_map = {
+            "happy": "喜悦",
+            "sad": "悲伤",
+            "angry": "愤怒",
+            "surprise": "惊讶",
+            "fear": "恐惧",
+            "neutral": "平静"
+        }
+
         return {
-            "emotion": primary_emotion,
+            "emotion": emotion_cn_map.get(primary_emotion, "平静"),
+            "emotion_en": primary_emotion,
             "score": emotion_score,
             "confidence": confidence,
-            "details": scores
+            "details": {emotion_cn_map.get(k, k): v for k, v in scores.items()}
         }
 
     async def get_emotion_label(self, text: str) -> str:

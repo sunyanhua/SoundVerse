@@ -558,6 +558,139 @@ class ASRService:
             logger.error(f"带时间戳识别失败: {e}")
             return None
 
+    async def recognize_audio_with_word_timestamps(
+        self,
+        audio_file_path: str,
+        language: str = "zh-CN",
+        sample_rate: int = 16000,
+        format: str = "mp3",
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        识别音频并返回带时间戳的词/短句级别结果（用于语义分割）
+
+        返回结果比句子级别更细粒度，包含标点符号的词级时间戳
+
+        Returns:
+            列表，每个元素包含 text(带标点), start_time, end_time
+        """
+        try:
+            if not self.is_real_mode():
+                if not self.app_key or not self.access_key_id or not self.access_key_secret:
+                    raise ValueError("阿里云ASR服务配置不完整，缺少必要的API密钥")
+                await self.initialize()
+
+            # 上传文件到OSS
+            import uuid
+            object_key = f"asr-temp/{uuid.uuid4()}_{Path(audio_file_path).name}"
+
+            logger.info(f"上传音频文件到OSS: {object_key}")
+            with open(audio_file_path, 'rb') as f:
+                self.oss_bucket.put_object(object_key, f)
+
+            oss_url = self.oss_bucket.sign_url('GET', object_key, 3600)
+
+            # 使用FileTrans进行识别，启用词级时间戳
+            if NLS_SDK_VERSION == "new":
+                ft = nls.FileTrans(
+                    akid=self.access_key_id,
+                    aksecret=self.access_key_secret,
+                    appkey=self.app_key
+                )
+
+                params = {
+                    "file_link": oss_url,
+                    "domain": "file_trans",
+                    "version": "4.0",  # 必须设置4.0才能使用enable_words
+                    "auto_split": True,
+                    "enable_punctuation_prediction": True,
+                    "enable_inverse_text_normalization": True,
+                    "enable_words": True,  # 启用词级时间戳
+                }
+
+                if format == "pcm":
+                    params["format"] = "pcm"
+                    params["sample_rate"] = sample_rate
+                else:
+                    params["format"] = format if format in ["wav", "mp3", "aac", "ogg", "flac"] else "mp3"
+
+                task_id = ft.submit(**params)
+
+                if not task_id:
+                    raise RuntimeError("创建ASR任务失败")
+
+                logger.info(f"ASR词级时间戳识别任务创建: {task_id}")
+
+                # 轮询任务状态
+                max_attempts = 60
+                for attempt in range(max_attempts):
+                    await asyncio.sleep(2)
+
+                    status_result = ft.get_status(task_id)
+                    status = status_result.get("Status")
+
+                    if status == 'SUCCESS':
+                        result = status_result.get('Result', {})
+                        sentences_data = result.get('Sentences', [])
+
+                        word_timestamps = []
+
+                        for sent in sentences_data:
+                            words_data = sent.get('Words', [])
+                            for word_info in words_data:
+                                text = word_info.get('Text', '').strip()
+                                start_time = word_info.get('BeginTime', 0) / 1000.0
+                                end_time = word_info.get('EndTime', 0) / 1000.0
+
+                                if text:
+                                    word_timestamps.append({
+                                        'text': text,
+                                        'start_time': start_time,
+                                        'end_time': end_time,
+                                    })
+
+                        # 如果没有词级数据，降级到句子级别
+                        if not word_timestamps:
+                            logger.warning("ASR未返回词级时间戳，降级到句子级别")
+                            for sent in sentences_data:
+                                text = sent.get('Text', '').strip()
+                                start_time = sent.get('BeginTime', 0) / 1000.0
+                                end_time = sent.get('EndTime', 0) / 1000.0
+
+                                if text:
+                                    word_timestamps.append({
+                                        'text': text,
+                                        'start_time': start_time,
+                                        'end_time': end_time,
+                                    })
+
+                        logger.info(f"ASR词级时间戳识别成功: {len(word_timestamps)} 个词/短句")
+
+                        # 清理OSS临时文件
+                        try:
+                            self.oss_bucket.delete_object(object_key)
+                        except:
+                            pass
+
+                        return word_timestamps
+
+                    elif status == 'FAILED':
+                        raise RuntimeError(f"ASR任务失败: {status_result.get('Message')}")
+                    elif status == 'SUCCESS_WITH_NO_VALID_FRAGMENT':
+                        logger.warning("ASR识别成功但无有效语音")
+                        return []
+
+                raise RuntimeError("ASR任务超时")
+            else:
+                raise NotImplementedError("旧版本SDK暂不支持词级时间戳识别")
+
+        except Exception as e:
+            logger.error(f"词级时间戳识别失败: {e}")
+            # 回退到句子级别
+            logger.info("回退到句子级别识别")
+            return await self.recognize_audio_with_timestamps(
+                audio_file_path, language, sample_rate, format
+            )
+
     async def batch_recognize_files(
         self,
         file_paths: List[str],
