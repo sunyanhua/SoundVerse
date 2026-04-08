@@ -294,25 +294,80 @@ class VectorSearchService:
         """
         从索引中移除音频片段
         """
-        if not self.index:
+        if not self.initialized:
             await self.initialize()
 
         try:
-            # 查找segment_id的索引位置
-            if segment_id in self.segment_ids:
-                idx = self.segment_ids.index(segment_id)
-
-                # 在实际实现中，FAISS不支持直接删除
-                # 这里需要重建索引或使用其他方法
-                # 暂时记录日志
-                logger.warning(f"需要从索引中移除片段: {segment_id} (索引位置: {idx})")
-                return True
+            if self.use_dashvector and self.dashvector_collection:
+                # 使用DashVector直接删除
+                try:
+                    result = self.dashvector_collection.delete(segment_id)
+                    if result:
+                        logger.info(f"从DashVector删除片段成功: {segment_id}")
+                        return True
+                    else:
+                        logger.warning(f"从DashVector删除片段失败或不存在: {segment_id}")
+                        return False
+                except Exception as e:
+                    logger.error(f"从DashVector删除片段异常: {segment_id}, 错误: {e}")
+                    return False
             else:
-                return False
+                # 使用FAISS - 需要重建索引（FAISS不支持直接删除）
+                if segment_id not in self.segment_ids:
+                    logger.warning(f"片段不在FAISS索引中: {segment_id}")
+                    return False
+
+                # 重建索引（移除指定片段）
+                await self._rebuild_index_without_segment(segment_id)
+                logger.info(f"从FAISS索引重建完成，已移除片段: {segment_id}")
+                return True
 
         except Exception as e:
             logger.error(f"移除片段失败: {str(e)}")
             return False
+
+    async def _rebuild_index_without_segment(self, segment_id: str):
+        """
+        重建FAISS索引，排除指定片段
+        """
+        try:
+            # 获取要删除的索引位置
+            idx_to_remove = self.segment_ids.index(segment_id)
+
+            # 如果只有一个向量，直接创建空索引
+            if len(self.segment_ids) <= 1:
+                await self.create_empty_index()
+                self.segment_ids = []
+                return
+
+            # 提取所有向量（除了要删除的）
+            all_vectors = []
+            new_segment_ids = []
+
+            for i, sid in enumerate(self.segment_ids):
+                if sid != segment_id:
+                    # 从原索引中获取向量
+                    vector = self.index.reconstruct(i)
+                    all_vectors.append(vector)
+                    new_segment_ids.append(sid)
+
+            # 重建索引
+            import numpy as np
+            self.index = faiss.IndexFlatL2(self.vector_dimension)
+
+            if all_vectors:
+                vectors_array = np.array(all_vectors, dtype=np.float32)
+                self.index.add(vectors_array)
+
+            # 更新segment_ids
+            self.segment_ids = new_segment_ids
+
+            # 保存新索引
+            await self.save_index()
+
+        except Exception as e:
+            logger.error(f"重建FAISS索引失败: {e}")
+            raise
 
     async def get_index_stats(self) -> dict:
         """

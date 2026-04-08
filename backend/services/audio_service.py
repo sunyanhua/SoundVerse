@@ -459,8 +459,19 @@ async def delete_audio_source(
     user: User,
 ) -> bool:
     """
-    删除音频源
+    删除音频源（完整级联删除）
+
+    删除内容：
+    1. 语弹片段的向量索引
+    2. 语弹片段的 OSS 文件
+    3. 语弹片段的数据库记录
+    4. 音频源的 OSS 文件
+    5. 音频源的数据库记录
     """
+    from services.storage_service import StorageService
+    from pathlib import Path
+    import shutil
+
     stmt = select(AudioSource).where(AudioSource.id == source_id)
     result = await db.execute(stmt)
     source = result.scalar_one_or_none()
@@ -469,9 +480,13 @@ async def delete_audio_source(
         return False
 
     # 检查权限：管理员或上传者
-    # 这里简化处理：只允许管理员删除
     if not user.is_admin:
         return False
+
+    # 初始化存储服务
+    storage_service = StorageService()
+
+    errors = []
 
     # 删除关联的语弹片段
     stmt_segments = select(AudioSegment).where(AudioSegment.source_id == source_id)
@@ -480,51 +495,85 @@ async def delete_audio_source(
 
     segment_count = 0
     for segment in segments:
-        # 从向量索引中删除
         try:
-            from services.search_service import delete_segment_from_index
-            await delete_segment_from_index(str(segment.id))
-        except Exception as e:
-            logger.warning(f"删除向量索引失败 segment_id={segment.id}: {e}")
+            # 1. 从向量索引中删除
+            try:
+                from services.search_service import delete_segment_from_index
+                await delete_segment_from_index(str(segment.id))
+                logger.info(f"删除向量索引: {segment.id}")
+            except Exception as e:
+                logger.warning(f"删除向量索引失败 segment_id={segment.id}: {e}")
+                errors.append(f"向量索引删除失败: {segment.id}")
 
-        # 删除数据库记录
-        await db.delete(segment)
-        segment_count += 1
+            # 2. 删除语弹的 OSS 文件
+            if segment.oss_key:
+                try:
+                    await storage_service.delete_file(segment.oss_key)
+                    logger.info(f"删除语弹 OSS 文件: {segment.oss_key}")
+                except Exception as e:
+                    logger.warning(f"删除语弹 OSS 文件失败: {segment.oss_key}, {e}")
+                    errors.append(f"语弹OSS删除失败: {segment.oss_key}")
+
+            # 3. 删除本地语弹文件（如果存在）
+            if segment.oss_url and not segment.oss_url.startswith("http"):
+                try:
+                    file_path = Path(segment.oss_url)
+                    if file_path.exists():
+                        file_path.unlink(missing_ok=True)
+                        logger.info(f"删除语弹本地文件: {file_path}")
+                except Exception as e:
+                    logger.warning(f"删除语弹本地文件失败: {e}")
+
+            # 4. 删除数据库记录
+            await db.delete(segment)
+            segment_count += 1
+
+        except Exception as e:
+            logger.error(f"删除语弹片段失败 segment_id={segment.id}: {e}")
+            errors.append(f"语弹删除失败: {segment.id}")
 
     logger.info(f"删除音频源 {source_id}: 删除了 {segment_count} 个语弹片段")
 
-    # 删除物理文件（本地文件）
-    if source.oss_url:
+    # 5. 删除音频源的 OSS 文件
+    if source.oss_key:
         try:
-            from pathlib import Path
-            import shutil
-            
+            await storage_service.delete_file(source.oss_key)
+            logger.info(f"删除音频源 OSS 文件: {source.oss_key}")
+        except Exception as e:
+            logger.warning(f"删除音频源 OSS 文件失败: {source.oss_key}, {e}")
+            errors.append(f"音频源OSS删除失败: {source.oss_key}")
+
+    # 6. 删除本地音频源文件
+    if source.oss_url and not source.oss_url.startswith("http"):
+        try:
             file_path = Path(source.oss_url)
             if file_path.exists():
-                # 如果是目录，删除整个目录
                 if file_path.is_dir():
                     shutil.rmtree(file_path, ignore_errors=True)
                     logger.info(f"删除音频源目录: {file_path}")
                 else:
                     file_path.unlink(missing_ok=True)
                     logger.info(f"删除音频源文件: {file_path}")
-                
+
                 # 删除上级目录（upload_id目录）
                 parent_dir = file_path.parent
                 if parent_dir.exists() and parent_dir.name != "uploads":
                     shutil.rmtree(parent_dir, ignore_errors=True)
                     logger.info(f"删除音频源上级目录: {parent_dir}")
         except Exception as e:
-            logger.warning(f"删除物理文件失败: {e}")
+            logger.warning(f"删除本地物理文件失败: {e}")
+            errors.append(f"本地文件删除失败")
 
-    # 标记音频源为删除状态
-    source.processing_status = "deleted"
+    # 7. 真正删除音频源数据库记录（而非仅标记状态）
+    await db.delete(source)
     await db.commit()
 
+    logger.info(f"音频源 {source_id} 已完全删除")
+
+    if errors:
+        logger.warning(f"删除过程中出现 {len(errors)} 个错误: {errors}")
 
     return True
-
-
 async def get_recommended_audios(
     db: AsyncSession,
     user_id: Optional[str] = None,
@@ -1142,7 +1191,7 @@ async def delete_audio_segment(
     user: User,
 ) -> bool:
     """
-    删除单个语弹（级联删除：数据、向量索引、物理文件）
+    删除单个语弹（完整级联删除：数据、向量索引、OSS文件、本地文件）
 
     权限检查：
     - 管理员可以删除任何语弹
@@ -1150,9 +1199,9 @@ async def delete_audio_segment(
     """
     from shared.models.audio import AudioSegment
     from shared.models.user import User
+    from services.storage_service import StorageService
     from sqlalchemy import select
     from pathlib import Path
-    import shutil
 
     # 查询语弹
     stmt = select(AudioSegment).where(AudioSegment.id == segment_id)
@@ -1168,6 +1217,8 @@ async def delete_audio_segment(
         if segment.user_id != user.id:
             return False
 
+    errors = []
+
     try:
         # 1. 删除向量索引
         try:
@@ -1176,22 +1227,38 @@ async def delete_audio_segment(
             logger.info(f"删除语弹向量索引: {segment_id}")
         except Exception as e:
             logger.warning(f"删除向量索引失败 segment_id={segment_id}: {e}")
+            errors.append(f"向量索引删除失败")
 
-        # 2. 删除物理文件
-        if segment.oss_url:
+        # 2. 删除 OSS 文件
+        if segment.oss_key:
+            try:
+                storage_service = StorageService()
+                await storage_service.delete_file(segment.oss_key)
+                logger.info(f"删除语弹 OSS 文件: {segment.oss_key}")
+            except Exception as e:
+                logger.warning(f"删除语弹 OSS 文件失败: {segment.oss_key}, {e}")
+                errors.append(f"OSS文件删除失败")
+
+        # 3. 删除本地物理文件
+        if segment.oss_url and not segment.oss_url.startswith("http"):
             try:
                 file_path = Path(segment.oss_url)
                 if file_path.exists():
                     file_path.unlink(missing_ok=True)
-                    logger.info(f"删除语弹物理文件: {file_path}")
+                    logger.info(f"删除语弹本地文件: {file_path}")
             except Exception as e:
-                logger.warning(f"删除物理文件失败: {e}")
+                logger.warning(f"删除本地文件失败: {e}")
+                errors.append(f"本地文件删除失败")
 
-        # 3. 删除数据库记录
+        # 4. 删除数据库记录（级联删除会处理关联的收藏记录）
         await db.delete(segment)
         await db.commit()
 
         logger.info(f"用户 {user.id} 删除语弹 {segment_id}")
+
+        if errors:
+            logger.warning(f"语弹删除过程中出现 {len(errors)} 个错误: {errors}")
+
         return True
 
     except Exception as e:

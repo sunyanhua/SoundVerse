@@ -65,7 +65,7 @@ class ChatMessage(Base):
     # 基础信息
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     session_id = Column(String(36), ForeignKey("chat_sessions.id"), index=True, nullable=False)
-    audio_segment_id = Column(String(36), ForeignKey("audio_segments.id"), index=True, nullable=True)
+    audio_segment_id = Column(String(36), ForeignKey("audio_segments.id", ondelete="SET NULL"), index=True, nullable=True)
 
     # 消息内容
     role = Column(String(20), nullable=False)  # user, assistant

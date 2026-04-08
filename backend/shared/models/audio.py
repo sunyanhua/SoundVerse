@@ -124,7 +124,7 @@ class AudioSegment(Base):
     # 关系
     source = relationship("AudioSource", back_populates="segments")
     user = relationship("User", back_populates="audio_segments")
-    favorites = relationship("FavoriteSegment", back_populates="segment")
+    favorites = relationship("FavoriteSegment", back_populates="segment", cascade="all, delete-orphan")
     chat_messages = relationship("ChatMessage", back_populates="audio_segment")
 
     def __repr__(self) -> str:
