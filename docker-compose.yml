@@ -110,6 +110,7 @@ services:
       - MAX_SEGMENT_DURATION=8.0
       - MIN_SEGMENT_DURATION=2.0
       - SIMILARITY_THRESHOLD=0.25
+      - PYTHONUNBUFFERED=1
     env_file:
       - ./.env
     volumes:
@@ -119,7 +120,8 @@ services:
         - action: sync
           path: ./backend
           target: /app
-    command: celery -A tasks.celery_app worker --loglevel=info --concurrency=4
+    # 使用热重载启动脚本
+    command: python celery_worker_reload.py
     networks:
       - soundverse-network
     restart: unless-stopped

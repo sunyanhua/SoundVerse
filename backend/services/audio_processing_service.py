@@ -21,6 +21,8 @@ from shared.models.user import User
 from config import settings
 from ai_models.asr_service import asr_service, recognize_audio_file
 from ai_models.nlp_service import get_text_vector
+from services.quality_check import check_segment_quality
+from services.emotion_service import analyze_emotion
 
 logger = logging.getLogger(__name__)
 
@@ -113,10 +115,20 @@ class AudioProcessingService:
             # 处理每个片段
             total_segments = len(segments_ranges)
             created_segments = []
+            skipped_segments = []
 
-            for i, (start_time, end_time) in enumerate(segments_ranges):
+            for i, segment_data in enumerate(segments_ranges):
                 try:
-                    logger.info(f"处理片段 {i+1}/{total_segments}: {start_time:.2f}s - {end_time:.2f}s")
+                    # 新的返回格式: (start_time, end_time, text)
+                    if len(segment_data) == 3:
+                        start_time, end_time, asr_text = segment_data
+                    else:
+                        # 兼容旧格式 (start_time, end_time)
+                        start_time, end_time = segment_data[:2]
+                        asr_text = ""
+
+                    duration = end_time - start_time
+                    logger.info(f"处理语弹 {i+1}/{total_segments}: {start_time:.2f}s - {end_time:.2f}s")
 
                     # 提取音频片段
                     segment_file_path = await self.extract_audio_segment(
@@ -124,15 +136,47 @@ class AudioProcessingService:
                     )
 
                     if not segment_file_path:
-                        logger.warning(f"提取片段 {i+1} 失败，跳过")
+                        logger.warning(f"提取语弹 {i+1} 失败，跳过")
+                        skipped_segments.append({"index": i+1, "reason": "提取失败"})
                         continue
 
-                    # 处理片段（ASR识别等）
-                    result = await self.process_audio_segment(segment_file_path)
+                    # 如果ASR已经返回文本，直接使用；否则进行本地ASR识别
+                    transcription = asr_text.strip() if asr_text else ""
 
-                    if not result["success"] or not result["transcription"]:
-                        logger.warning(f"片段 {i+1} 处理失败或无文本，跳过")
+                    if not transcription:
+                        # 回退到本地ASR识别
+                        result = await self.process_audio_segment(segment_file_path)
+                        if result["success"] and result["transcription"]:
+                            transcription = result["transcription"]
+
+                    if not transcription:
+                        logger.warning(f"语弹 {i+1} 无文本内容，跳过")
+                        skipped_segments.append({"index": i+1, "reason": "无文本"})
+                        # 清理临时文件
+                        self._cleanup_temp_file(segment_file_path)
                         continue
+
+                    # 质量检查
+                    is_quality_ok, quality_result = await check_segment_quality(transcription, duration)
+
+                    if not is_quality_ok:
+                        logger.warning(f"语弹 {i+1} 质量检查不通过: {quality_result.get('reasons', [])}")
+                        skipped_segments.append({
+                            "index": i+1,
+                            "reason": f"质量不合格: {quality_result.get('reasons', [])}"
+                        })
+                        # 清理临时文件，不入库
+                        self._cleanup_temp_file(segment_file_path)
+                        continue
+
+                    logger.info(f"语弹 {i+1} 质量评分: {quality_result.get('score', 0):.1f} ({quality_result.get('quality_level', '未知')})")
+
+                    # 情感分析
+                    emotion_result = await analyze_emotion(transcription)
+                    emotion = emotion_result.get("emotion", "neutral")
+                    sentiment_score = emotion_result.get("score", 0.0)
+
+                    logger.info(f"语弹 {i+1} 情感分析: {emotion} (得分: {sentiment_score:.2f})")
 
                     # 创建音频片段记录
                     segment = await self._create_audio_segment(
@@ -141,29 +185,37 @@ class AudioProcessingService:
                         user=user,
                         start_time=start_time,
                         end_time=end_time,
-                        duration=end_time - start_time,
-                        transcription=result["transcription"],
+                        duration=duration,
+                        transcription=transcription,
                         segment_file_path=segment_file_path,
+                        emotion=emotion,
+                        sentiment_score=sentiment_score,
                     )
                     created_segments.append(segment)
-                    logger.info(f"创建音频片段: {segment.id}")
+                    logger.info(f"创建精品语弹: {segment.id}")
 
                     # 更新进度
                     source.processing_progress = 0.2 + (i + 1) / total_segments * 0.7
                     await db.commit()
 
                 except Exception as seg_e:
-                    logger.error(f"处理片段 {i+1} 时出错: {seg_e}")
+                    logger.error(f"处理语弹 {i+1} 时出错: {seg_e}")
+                    skipped_segments.append({"index": i+1, "reason": f"异常: {str(seg_e)}"})
                     continue
+
+            # 记录处理结果
+            logger.info(f"裁切完成: 成功 {len(created_segments)} 个, 跳过 {len(skipped_segments)} 个")
+            if skipped_segments:
+                logger.info(f"跳过的语弹: {skipped_segments}")
 
             # 标记处理完成
             if created_segments:
                 source.processing_status = "completed"
                 source.processing_progress = 1.0
-                logger.info(f"音频源处理完成: {source.id}, 共创建 {len(created_segments)} 个片段")
+                logger.info(f"音频源处理完成: {source.id}, 共创建 {len(created_segments)} 个精品语弹")
             else:
                 source.processing_status = "failed"
-                source.error_message = "未成功创建任何音频片段"
+                source.error_message = "未成功创建任何音频片段（可能都被质量检查过滤）"
                 logger.warning(f"音频源处理未创建任何片段: {source.id}")
 
             await db.commit()
@@ -175,7 +227,6 @@ class AudioProcessingService:
             source.error_message = str(e)
             await db.commit()
             return False
-
     async def _create_audio_segment(
         self,
         db: AsyncSession,
@@ -187,6 +238,8 @@ class AudioProcessingService:
         transcription: str,
         segment_file_path: str,
         language: str = "zh-CN",
+        emotion: str = None,
+        sentiment_score: float = None,
     ) -> AudioSegment:
         """
         创建音频片段记录
@@ -233,8 +286,8 @@ class AudioProcessingService:
             transcription=transcription,
             language=language,
             speaker=None,  # 可后续通过说话人识别填充
-            emotion=None,  # 可后续通过情感分析填充
-            sentiment_score=None,
+            emotion=emotion,
+            sentiment_score=sentiment_score,
             vector=vector,
             vector_dimension=vector_dimension,
             vector_updated_at=datetime.utcnow() if vector else None,
@@ -266,19 +319,19 @@ class AudioProcessingService:
     async def split_audio_by_silence(
         self,
         audio_file_path: str,
-    ) -> List[Tuple[float, float]]:
+    ) -> List[Tuple[float, float, str]]:
         """
-        基于ASR时间戳进行语义聚拢分割音频
+        基于ASR时间戳分割音频（以句子完整性为优先，去掉时长约束）
 
         Args:
             audio_file_path: 音频文件路径
 
         Returns:
-            分割区间列表，每个区间为(start_time, end_time)
+            分割区间列表，每个区间为(start_time, end_time, text)
         """
         try:
-            logger.info(f"开始基于ASR时间戳进行语义聚拢分割: {audio_file_path}")
-            logger.info(f"目标片段时长: {self.target_min_duration}-{self.target_max_duration}秒，合并规则: 短句合并直到目标时长，最大不超过{self.absolute_max_duration}秒")
+            logger.info(f"开始基于ASR时间戳分割: {audio_file_path}")
+            logger.info("分割策略: 以句子完整性为优先，每个语弹一个完整句子")
 
             # 1. 获取ASR带时间戳的识别结果
             from ai_models.asr_service import asr_service
@@ -291,119 +344,140 @@ class AudioProcessingService:
 
             if not sentences:
                 logger.warning(f"ASR未返回有效句子，回退到静音检测分割")
-                return await self._fallback_split_by_silence(audio_file_path)
+                segments = await self._fallback_split_by_silence(audio_file_path)
+                # 为回退方案添加空文本
+                return [(start, end, "") for start, end in segments]
 
             logger.info(f"ASR识别成功，共 {len(sentences)} 个句子")
 
-            # 2. 语义聚拢：合并短句为目标时长片段
-            merged_segments = self._merge_sentences_by_duration(sentences)
+            # 2. 加载音频用于静音检测（找句子边界）
+            audio = PydubAudioSegment.from_file(audio_file_path)
+            audio_duration = len(audio) / 1000.0  # 毫秒转秒
 
-            # 3. 优化听感：起始提前buffer_start，结束延后buffer_end
+            # 3. 为每个句子优化边界（基于静音检测找呼吸感）
             optimized_segments = []
-            for start_time, end_time in merged_segments:
-                # 确保起始时间不小于0
-                new_start = max(0.0, start_time - self.buffer_start)  # 提前
-                new_end = end_time + self.buffer_end  # 延后
-                optimized_segments.append((new_start, new_end))
+            for i, sent in enumerate(sentences):
+                text = sent.get('text', '').strip()
+                start_time = sent.get('start_time', 0)
+                end_time = sent.get('end_time', 0)
 
-            logger.info(f"语义聚拢分割完成，共 {len(optimized_segments)} 个片段")
+                if not text or end_time <= start_time:
+                    continue
 
-            # 4. 验证片段时长
-            for i, (start, end) in enumerate(optimized_segments):
+                # 优化边界：在句子前后找静音点
+                optimized_start, optimized_end = await self._optimize_segment_boundaries(
+                    audio, start_time, end_time, i, len(sentences)
+                )
+
+                optimized_segments.append((optimized_start, optimized_end, text))
+                logger.debug(f"句子 {i+1}: {optimized_start:.2f}s - {optimized_end:.2f}s, 文本: {text[:30]}...")
+
+            logger.info(f"分割完成，共 {len(optimized_segments)} 个语弹片段")
+
+            # 4. 验证结果
+            for i, (start, end, text) in enumerate(optimized_segments):
                 duration = end - start
-                logger.info(f"片段 {i+1}: {start:.2f}s - {end:.2f}s (时长: {duration:.2f}s)")
-                if duration < self.target_min_duration * 0.8:  # 允许80%的误差
-                    logger.warning(f"片段 {i+1} 时长过短: {duration:.2f}s < {self.target_min_duration*0.8:.1f}s")
-                elif duration > self.absolute_max_duration:
-                    logger.warning(f"片段 {i+1} 时长过长: {duration:.2f}s > {self.absolute_max_duration:.1f}s")
+                logger.info(f"语弹 {i+1}: {start:.2f}s - {end:.2f}s (时长: {duration:.2f}s)")
 
             return optimized_segments
 
         except Exception as e:
             logger.error(f"ASR时间戳分割失败: {str(e)}")
             logger.info("回退到静音检测分割")
-            return await self._fallback_split_by_silence(audio_file_path)
+            segments = await self._fallback_split_by_silence(audio_file_path)
+            return [(start, end, "") for start, end in segments]
 
-    def _merge_sentences_by_duration(self, sentences: List[Dict[str, Any]]) -> List[Tuple[float, float]]:
+    async def _optimize_segment_boundaries(
+        self,
+        audio: PydubAudioSegment,
+        start_time: float,
+        end_time: float,
+        index: int,
+        total: int,
+    ) -> Tuple[float, float]:
         """
-        根据句子时间戳合并短句为目标时长片段
+        优化片段边界：基于静音检测找最佳截取点，确保呼吸感
 
-        合并规则:
-        1. 目标时长: 5-10秒
-        2. 如果当前句子时长 < 5秒，继续合并下一句
-        3. 合并后的总时长不超过12秒
-        4. 确保每个片段至少包含一个完整句子
+        策略：
+        1. 在句子开始前找最近的静音点（提前最多300ms）
+        2. 在句子结束后找最近的静音点（延后最多500ms）
+        3. 确保不会跨句
 
         Args:
-            sentences: 句子列表，每个元素包含 text, start_time, end_time
+            audio: pydub AudioSegment 对象
+            start_time: 句子开始时间（秒）
+            end_time: 句子结束时间（秒）
+            index: 句子索引
+            total: 总句子数
 
         Returns:
-            合并后的片段区间列表 [(start_time, end_time), ...]
+            (optimized_start, optimized_end)
         """
-        if not sentences:
-            return []
+        try:
+            # 转换为毫秒
+            start_ms = int(start_time * 1000)
+            end_ms = int(end_time * 1000)
 
-        segments = []
-        current_start = sentences[0]["start_time"]
-        current_end = sentences[0]["end_time"]
-        current_texts = [sentences[0]["text"]]
+            # 在句子开始前查找静音点（往前最多300ms）
+            search_start = max(0, start_ms - 300)
+            pre_segment = audio[search_start:start_ms]
 
-        for i in range(1, len(sentences)):
-            sentence = sentences[i]
-            sentence_duration = sentence["end_time"] - sentence["start_time"]
-            current_duration = current_end - current_start
-            potential_duration = sentence["end_time"] - current_start
+            # 检测静音区间
+            pre_silences = detect_nonsilent(
+                pre_segment,
+                min_silence_len=50,  # 50ms的静音即可
+                silence_thresh=-40,
+                seek_step=10
+            )
 
-            # 如果当前片段时长已经达到目标最小时长，且加入下一句会超过绝对最大时长，则结束当前片段
-            if current_duration >= self.target_min_duration and potential_duration > self.absolute_max_duration:
-                # 保存当前片段
-                segments.append((current_start, current_end))
-                logger.debug(f"创建片段: {current_start:.2f}s - {current_end:.2f}s (时长: {current_duration:.2f}s), 文本: {'|'.join(current_texts)}")
-
-                # 开始新片段
-                current_start = sentence["start_time"]
-                current_end = sentence["end_time"]
-                current_texts = [sentence["text"]]
-                continue
-
-            # 如果当前片段时长小于目标最小时长，继续合并
-            if current_duration < self.target_min_duration:
-                current_end = sentence["end_time"]
-                current_texts.append(sentence["text"])
-                continue
-
-            # 当前片段时长在目标范围内，检查是否应该结束
-            # 如果下一句很短（小于3秒）且合并后不超过绝对最大时长，可以考虑合并
-            if sentence_duration < 3.0 and potential_duration <= self.absolute_max_duration:
-                current_end = sentence["end_time"]
-                current_texts.append(sentence["text"])
-                continue
-
-            # 否则结束当前片段，开始新片段
-            segments.append((current_start, current_end))
-            logger.debug(f"创建片段: {current_start:.2f}s - {current_end:.2f}s (时长: {current_duration:.2f}s), 文本: {'|'.join(current_texts)}")
-
-            current_start = sentence["start_time"]
-            current_end = sentence["end_time"]
-            current_texts = [sentence["text"]]
-
-        # 添加最后一个片段
-        final_duration = current_end - current_start
-        segments.append((current_start, current_end))
-        logger.debug(f"创建最后片段: {current_start:.2f}s - {current_end:.2f}s (时长: {final_duration:.2f}s), 文本: {'|'.join(current_texts)}")
-
-        # 过滤过短的片段（小于2秒）
-        filtered_segments = []
-        for start, end in segments:
-            duration = end - start
-            if duration >= 2.0:
-                filtered_segments.append((start, end))
+            if pre_silences:
+                # 找到最后一个非静音区间的结束点
+                last_sound_end = pre_silences[-1][1]
+                # 从search_start开始算，加上偏移量
+                optimized_start_ms = search_start + last_sound_end
+                # 再加一点缓冲
+                optimized_start_ms = min(start_ms, optimized_start_ms + 50)
             else:
-                logger.warning(f"过滤过短片段: {start:.2f}s - {end:.2f}s (时长: {duration:.2f}s)")
+                # 没找到静音点，使用原开始时间
+                optimized_start_ms = start_ms
 
-        logger.info(f"语义聚拢完成: {len(sentences)} 个句子 -> {len(filtered_segments)} 个片段")
-        return filtered_segments
+            # 在句子结束后查找静音点（往后最多500ms）
+            audio_duration_ms = len(audio)
+            search_end = min(audio_duration_ms, end_ms + 500)
+            post_segment = audio[end_ms:search_end]
 
+            post_silences = detect_nonsilent(
+                post_segment,
+                min_silence_len=50,
+                silence_thresh=-40,
+                seek_step=10
+            )
+
+            if post_silences:
+                # 找到第一个非静音区间的开始点
+                first_sound_start = post_silences[0][0]
+                # 从end_ms开始算
+                optimized_end_ms = end_ms + first_sound_start
+                # 减一点缓冲，确保不会截到下一句
+                optimized_end_ms = max(end_ms, optimized_end_ms - 100)
+            else:
+                # 没找到静音点，使用原结束时间
+                optimized_end_ms = end_ms
+
+            # 确保合理的时长
+            optimized_start = max(0.0, optimized_start_ms / 1000.0)
+            optimized_end = min(audio_duration_ms / 1000.0, optimized_end_ms / 1000.0)
+
+            # 确保至少保留原句子的主要部分
+            optimized_start = min(optimized_start, start_time)
+            optimized_end = max(optimized_end, end_time)
+
+            return (optimized_start, optimized_end)
+
+
+        except Exception as e:
+            logger.warning(f"优化边界失败: {e}, 使用原始边界")
+            return (start_time, end_time)
     async def _fallback_split_by_silence(
         self,
         audio_file_path: str,
@@ -502,6 +576,8 @@ class AudioProcessingService:
         self,
         segment_file_path: str,
         language: str = "zh-CN",
+        emotion: str = None,
+        sentiment_score: float = None,
     ) -> Dict[str, Any]:
         """
         处理单个音频片段：ASR识别、特征提取等
@@ -638,6 +714,17 @@ class AudioProcessingService:
                 "messages": [f"文件读取失败: {str(e)}"],
             }
 
+
+
+    def _cleanup_temp_file(self, file_path: str):
+        """清理临时文件"""
+        try:
+            if file_path and Path(file_path).exists():
+                temp_dir = Path(file_path).parent
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.debug(f"清理临时文件: {temp_dir}")
+        except Exception as e:
+            logger.warning(f"清理临时文件失败: {e}")
 
 def deduplicate_text(text: str) -> str:
     """

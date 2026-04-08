@@ -455,31 +455,107 @@ class ASRService:
         audio_file_path: str,
         language: str = "zh-CN",
         sample_rate: int = 16000,
-        format: str = "pcm",
+        format: str = "mp3",
     ) -> Optional[List[Dict[str, Any]]]:
         """
-        识别音频并返回带时间戳的文本
+        识别音频并返回带时间戳的文本（句子级别）
 
         Returns:
-            列表，每个元素包含文本、开始时间、结束时间
+            列表，每个元素包含 text, start_time, end_time
         """
         try:
             if not self.is_real_mode():
-                # 如果配置不完整，直接抛出异常
                 if not self.app_key or not self.access_key_id or not self.access_key_secret:
                     raise ValueError("阿里云ASR服务配置不完整，缺少必要的API密钥")
-                # 如果配置完整但服务未初始化，先尝试初始化
                 await self.initialize()
 
-            # 在实际实现中，这里应该：
-            # 1. 调用阿里云ASR API（支持时间戳的接口）
-            # 2. 解析时间戳信息
+            # 上传文件到OSS
+            import uuid
+            object_key = f"asr-temp/{uuid.uuid4()}_{Path(audio_file_path).name}"
 
-            # TODO: 实现真实的带时间戳识别
-            raise NotImplementedError("阿里云ASR带时间戳识别暂未实现，需要使用真实API")
+            logger.info(f"上传音频文件到OSS: {object_key}")
+            with open(audio_file_path, 'rb') as f:
+                self.oss_bucket.put_object(object_key, f)
+
+            oss_url = self.oss_bucket.sign_url('GET', object_key, 3600)
+
+            # 使用FileTrans进行识别，获取详细时间戳
+            if NLS_SDK_VERSION == "new":
+                ft = nls.FileTrans(
+                    akid=self.access_key_id,
+                    aksecret=self.access_key_secret,
+                    appkey=self.app_key
+                )
+
+                params = {
+                    "file_link": oss_url,
+                    "domain": "file_trans",
+                    "auto_split": True,
+                    "enable_punctuation_prediction": True,
+                    "enable_inverse_text_normalization": True,
+                    "enable_words": False,
+                }
+
+                if format == "pcm":
+                    params["format"] = "pcm"
+                    params["sample_rate"] = sample_rate
+                else:
+                    params["format"] = format if format in ["wav", "mp3", "aac", "ogg", "flac"] else "mp3"
+
+                task_id = ft.submit(**params)
+
+                if not task_id:
+                    raise RuntimeError("创建ASR任务失败")
+
+                logger.info(f"ASR时间戳识别任务创建: {task_id}")
+
+                # 轮询任务状态
+                max_attempts = 60
+                for attempt in range(max_attempts):
+                    await asyncio.sleep(2)
+
+                    status_result = ft.get_status(task_id)
+                    status = status_result.get("Status")
+
+                    if status == 'SUCCESS':
+                        sentences_data = status_result.get('Result', {}).get('Sentences', [])
+                        sentences = []
+
+                        for sent in sentences_data:
+                            text = sent.get('Text', '').strip()
+                            start_time = sent.get('BeginTime', 0) / 1000.0
+                            end_time = sent.get('EndTime', 0) / 1000.0
+
+                            if text and end_time > start_time:
+                                sentences.append({
+                                    'text': text,
+                                    'start_time': start_time,
+                                    'end_time': end_time,
+                                    'duration': end_time - start_time
+                                })
+
+                        logger.info(f"ASR时间戳识别成功: {len(sentences)} 个句子")
+
+                        # 清理OSS临时文件
+                        try:
+                            self.oss_bucket.delete_object(object_key)
+                        except:
+                            pass
+
+                        return sentences
+
+                    elif status == 'FAILED':
+                        raise RuntimeError(f"ASR任务失败: {status_result.get('Message')}")
+                    elif status == 'SUCCESS_WITH_NO_VALID_FRAGMENT':
+                        logger.warning("ASR识别成功但无有效语音")
+                        return []
+
+                raise RuntimeError("ASR任务超时")
+            else:
+                raise NotImplementedError("旧版本SDK暂不支持时间戳识别")
 
         except Exception as e:
-            logger.error(f"带时间戳的语音识别失败: {str(e)}")
+            logger.error(f"带时间戳识别失败: {e}")
             return None
 
     async def batch_recognize_files(
