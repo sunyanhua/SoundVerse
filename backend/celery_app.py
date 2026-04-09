@@ -26,8 +26,8 @@ celery_app.conf.update(
     timezone='Asia/Shanghai',
     enable_utc=True,
     task_track_started=True,
-    task_time_limit=30 * 60,  # 30分钟
-    task_soft_time_limit=25 * 60,
+    task_time_limit=5 * 60 * 60,  # 5小时硬限制（处理2小时长节目需要充足时间）
+    task_soft_time_limit=4 * 60 * 60,  # 4小时软限制
     worker_max_tasks_per_child=100,
     worker_prefetch_multiplier=1,
     task_acks_late=True,

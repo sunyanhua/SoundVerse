@@ -75,7 +75,7 @@ class AudioSegmentBase(BaseModel):
     language: str = "zh-CN"
     speaker: Optional[str] = Field(None, max_length=100)
     emotion: Optional[str] = Field(None, max_length=50)
-    sentiment_score: Optional[float] = Field(None, ge=-1.0, le=1.0)
+    sentiment_score: Optional[float] = Field(None)
     tags: Optional[List[str]] = None
     categories: Optional[List[str]] = None
     keywords: Optional[List[str]] = None
