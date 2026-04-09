@@ -294,6 +294,14 @@ async def process_chat_message(
                 audio_segment = selected_result.segment
                 best_similarity = selected_result.similarity_score  # 使用选中片段的相似度
                 logger.info(f"找到 {len(eligible_results)} 个匹配音频片段（相似度≥{settings.AUDIO_REPLY_THRESHOLD}），随机选择片段ID={audio_segment.id}，相似度 {best_similarity:.4f}")
+            elif search_result.results:
+                # 没有达到门槛的结果，但有搜索结果
+                # 如果最佳匹配的相似度 >= 0.8 * AUDIO_REPLY_THRESHOLD，也返回（80%规则）
+                fallback_threshold = settings.AUDIO_REPLY_THRESHOLD * 0.8
+                if best_similarity >= fallback_threshold:
+                    has_audio_match = True
+                    audio_segment = best_match.segment
+                    logger.info(f"最佳匹配相似度 {best_similarity:.4f} 未达到门槛 {settings.AUDIO_REPLY_THRESHOLD}，但达到80%回退门槛 {fallback_threshold:.4f}，返回最佳匹配")
 
         if has_audio_match:
             # 创建助手消息（带音频）
