@@ -109,29 +109,50 @@ export default function AILab() {
     setLoading(true);
 
     try {
+      console.log('Sending message:', message);
       const response = await api.post<{
-        message_id: string;
-        content: string;
+        message: {
+          id: string;
+          content: string;
+          audio_url?: string;
+          similarity_score?: number;
+          audio_segment_preview?: {
+            id?: string;
+            title?: string;
+            duration?: number;
+            source_title?: string;
+          };
+        };
         session_id: string;
       }>('/v1/chat/message', {
         content: message,
         session_id: sessionId,
       });
 
+      console.log('API response:', response);
+      console.log('Message data:', response.message);
+      console.log('Audio URL:', response.message?.audio_url);
+      console.log('Similarity:', response.message?.similarity_score);
+      console.log('Preview:', response.message?.audio_segment_preview);
+
       if (response.session_id && !sessionId) {
         setSessionId(response.session_id);
       }
 
       const assistantMsg: Conversation = {
-        id: response.message_id || `local-${Date.now()}-resp`,
+        id: response.message.id || `local-${Date.now()}-resp`,
         user_id: 'assistant',
         role: 'assistant',
-        content: response.content,
+        content: response.message.content,
+        audio_url: response.message.audio_url,
+        similarity_score: response.message.similarity_score,
+        audio_segment_preview: response.message.audio_segment_preview,
         created_at: new Date().toISOString(),
       };
 
       setConversations(prev => [...prev, assistantMsg]);
-    } catch {
+    } catch (error) {
+      console.error('API error:', error);
       await new Promise(resolve => setTimeout(resolve, 1500));
       const randomResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)];
       const assistantMsg: Conversation = {
@@ -243,11 +264,36 @@ export default function AILab() {
                   {conv.role === 'assistant' ? (
                     <div>
                       <p className="text-gray-800 mb-3">{conv.content}</p>
-                      <AudioPlayer
-                        audioUrl={mockResponses[Math.floor(Math.random() * mockResponses.length)].audioUrl}
-                        title="AI 语音回复"
-                        duration={mockResponses[Math.floor(Math.random() * mockResponses.length)].duration}
-                      />
+
+                      {/* 匹配信息卡片 - 始终显示 */}
+                      <div className="bg-gray-50 rounded-lg p-3 mb-3 border border-gray-200">
+                        {/* 调试信息 */}
+                        {console.log('Rendering assistant message:', { audio_url: conv.audio_url, similarity: conv.similarity_score, preview: conv.audio_segment_preview })}
+
+                        {/* 音频播放器 */}
+                        {conv.audio_url ? (
+                          <AudioPlayer
+                            audioUrl={conv.audio_url}
+                            title={conv.audio_segment_preview?.title || "广播片段"}
+                            duration={conv.audio_segment_preview?.duration}
+                          />
+                        ) : (
+                          <p className="text-sm text-orange-500 italic mb-2">音频暂不可用</p>
+                        )}
+
+                        {/* 相似度和来源信息 - 强制显示 */}
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                          <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
+                            相似度: {conv.similarity_score ? (conv.similarity_score * 100).toFixed(1) : '0.0'}%
+                          </span>
+                          <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded font-medium">
+                            来源: {conv.audio_segment_preview?.source_title || conv.source_title || '未知'}
+                          </span>
+                          <span className="text-gray-400 text-xs">
+                            ID: {(conv.audio_segment_preview?.id || conv.audio_segment_id || 'unknown').slice(0, 8)}
+                          </span>
+                        </div>
+                      </div>
                       <button
                         onClick={() => handleLike(conv.id)}
                         className={`mt-2 flex items-center gap-1 text-sm transition-colors ${

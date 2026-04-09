@@ -352,8 +352,8 @@ async def process_chat_message(
             audio_segment_preview={
                 "id": audio_segment.id if audio_segment else None,
                 "title": "广播音频片段",  # 固定标题，不显示转录文字
-                "duration": None,  # 不显示时长
-                "source_title": audio_segment.source_title if audio_segment else None,
+                "duration": audio_segment.duration if audio_segment else None,  # 返回真实时长
+                "source_title": getattr(audio_segment, 'source_title', None) or getattr(getattr(audio_segment, 'source', None), 'title', None),
             } if audio_segment else None,
         )
 
