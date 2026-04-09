@@ -63,8 +63,9 @@ class VectorSearchService:
         """
         创建空索引
         """
-        # 创建Flat索引（最基础但准确）
-        self.index = faiss.IndexFlatL2(self.vector_dimension)
+        # 使用IndexFlatIP（内积索引）而不是IndexFlatL2
+        # 因为向量已经L2归一化，内积 = 余弦相似度
+        self.index = faiss.IndexFlatIP(self.vector_dimension)
 
         # 保存索引
         await self.save_index()
@@ -134,8 +135,9 @@ class VectorSearchService:
                 if not self.index:
                     await self._initialize_faiss()
 
-                # 转换为numpy数组
+                # 转换为numpy数组并归一化（确保内积=余弦相似度）
                 vector_array = np.array([vector], dtype=np.float32)
+                faiss.normalize_L2(vector_array)  # L2归一化
 
                 # 添加到索引
                 self.index.add(vector_array)
@@ -167,8 +169,9 @@ class VectorSearchService:
                 segment_ids.append(segment_id)
 
             if vectors:
-                # 转换为numpy数组
+                # 转换为numpy数组并归一化
                 vector_array = np.array(vectors, dtype=np.float32)
+                faiss.normalize_L2(vector_array)  # L2归一化
 
                 # 批量添加到索引
                 self.index.add(vector_array)
@@ -241,22 +244,23 @@ class VectorSearchService:
                 if self.index.ntotal == 0:
                     return []
 
-                # 转换为numpy数组
+                # 确保查询向量也是归一化的（L2归一化）
                 query_array = np.array([query_vector], dtype=np.float32)
+                faiss.normalize_L2(query_array)  # 归一化查询向量
 
-                # 搜索相似向量
-                distances, indices = self.index.search(query_array, top_k)
+                # 搜索相似向量（使用内积索引 = 余弦相似度）
+                scores, indices = self.index.search(query_array, top_k)
 
                 # 处理结果
                 results = []
-                for i, (distance, idx) in enumerate(zip(distances[0], indices[0])):
+                for i, (score, idx) in enumerate(zip(scores[0], indices[0])):
                     if idx < 0 or idx >= len(self.segment_ids):
                         continue
 
-                    # 将距离转换为相似度分数
-                    # L2距离越小表示越相似，转换为0-1的相似度分数
-                    similarity = 1.0 / (1.0 + distance)
-                    logger.info(f"FAISS搜索结果: 索引位置={idx}, 距离={distance:.4f}, 原始分数={similarity:.4f}")
+                    # 使用内积索引时，score就是余弦相似度（-1到1）
+                    # 对于语义相似度，通常只关心正值，所以将负值映射到0
+                    similarity = max(0.0, float(score))
+                    logger.info(f"FAISS搜索结果: 索引位置={idx}, 余弦相似度={score:.4f}, 调整后={similarity:.4f}")
 
                     if similarity >= similarity_threshold:
                         segment_id = self.segment_ids[idx]
@@ -351,9 +355,9 @@ class VectorSearchService:
                     all_vectors.append(vector)
                     new_segment_ids.append(sid)
 
-            # 重建索引
+            # 重建索引 - 使用内积索引（余弦相似度）
             import numpy as np
-            self.index = faiss.IndexFlatL2(self.vector_dimension)
+            self.index = faiss.IndexFlatIP(self.vector_dimension)
 
             if all_vectors:
                 vectors_array = np.array(all_vectors, dtype=np.float32)

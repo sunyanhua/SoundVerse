@@ -61,8 +61,14 @@ export default function AudioPlayer({ audioUrl, title, duration, onShare }: Audi
     };
     const handleError = () => {
       console.error('音频加载错误:', audio.error);
-      setError('音频加载失败');
-      setIsLoading(false);
+      // 有些浏览器会因CORS触发error，但实际上音频可以播放
+      if (audio.readyState >= 2) {
+        // HAVE_CURRENT_DATA or higher, 可以播放
+        setIsLoading(false);
+      } else {
+        setError('音频加载失败，请重试');
+        setIsLoading(false);
+      }
     };
 
     audio.addEventListener('timeupdate', updateTime);
@@ -148,16 +154,22 @@ export default function AudioPlayer({ audioUrl, title, duration, onShare }: Audi
 
     // 尝试预加载音频
     const testAudio = new Audio();
-    testAudio.crossOrigin = "anonymous";
     testAudio.preload = "metadata";
 
     testAudio.addEventListener('loadedmetadata', () => {
       console.log('AudioPlayer: URL is valid, duration:', testAudio.duration);
+      setError(null);  // 清除之前的错误
     });
 
+    testAudio.addEventListener('canplay', () => {
+      console.log('AudioPlayer: can play');
+      setError(null);
+    });
+
+    // 某些浏览器会因CORS报error，但音频实际可播放
     testAudio.addEventListener('error', (e) => {
-      console.error('AudioPlayer: URL failed to load:', e);
-      setError('音频URL无法访问，可能是跨域问题');
+      console.log('AudioPlayer: test load error (may be CORS, but might still play):', e);
+      // 不设置错误，让主音频元素决定
     });
 
     testAudio.src = audioUrl;
@@ -165,7 +177,7 @@ export default function AudioPlayer({ audioUrl, title, duration, onShare }: Audi
 
   return (
     <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-4 shadow-md border border-blue-100">
-      <audio ref={audioRef} src={audioUrl} crossOrigin="anonymous" preload="metadata" />
+      <audio ref={audioRef} src={audioUrl} preload="metadata" />
 
       {error && (
         <div className="mb-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded">

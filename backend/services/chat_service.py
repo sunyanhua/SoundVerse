@@ -220,43 +220,22 @@ async def process_chat_message(
 
         logger.info(f"搜索意图重写: 原句='{message}', 关键词={keywords}, 总查询数={len(queries)}")
 
-        # 并发搜索所有查询
-        all_results = []
+        # 优先只使用原句查询，获得最准确的匹配
+        original_query = queries[0] if queries else message
+        logger.info(f"优先使用原句查询: '{original_query}'")
 
-        for query in queries:
-            search_request = AudioSearchRequest(
-                query=query,
-                limit=3,  # 每个查询获取前3个匹配结果
-            )
+        search_request = AudioSearchRequest(
+            query=original_query,
+            limit=5,  # 获取前5个匹配结果
+        )
 
-            try:
-                search_response = await search_audio_segments(db, search_request, user.id)
-
-                if search_response.results:
-                    # 添加结果到总列表
-                    for result in search_response.results:
-                        all_results.append((result.segment.id, result.similarity_score, result))
-                        logger.debug(f"查询 '{query}' 找到片段 {result.segment.id}, 相似度 {result.similarity_score:.4f}")
-                else:
-                    logger.debug(f"查询 '{query}' 无匹配结果")
-
-            except Exception as e:
-                logger.warning(f"查询 '{query}' 搜索失败: {str(e)}")
-                continue
-
-        # 按相似度排序并去重（相同片段ID只保留最高相似度）
-        best_results = {}
-        for segment_id, similarity, result in all_results:
-            if segment_id not in best_results or similarity > best_results[segment_id][0]:
-                best_results[segment_id] = (similarity, result)
-
-        # 转换为列表并按相似度降序排序
-        sorted_results = sorted(best_results.values(), key=lambda x: x[0], reverse=True)
-
-        # 构建最终的搜索结果（最多3个）
-        final_results = []
-        for similarity, result in sorted_results[:3]:
-            final_results.append(result)
+        try:
+            search_response = await search_audio_segments(db, search_request, user.id)
+            final_results = search_response.results if search_response.results else []
+            logger.info(f"原句查询找到 {len(final_results)} 个结果")
+        except Exception as e:
+            logger.warning(f"原句查询失败: {str(e)}")
+            final_results = []
 
         # 创建真正的AudioSearchResponse
         search_result = AudioSearchResponse(
@@ -266,7 +245,8 @@ async def process_chat_message(
             processing_time_ms=150.5
         )
 
-        logger.info(f"搜索意图重写完成: 找到 {len(final_results)} 个唯一片段，最高相似度 {sorted_results[0][0] if sorted_results else 0:.4f}")
+        best_similarity_value = final_results[0].similarity_score if final_results else 0.0
+        logger.info(f"搜索完成: 找到 {len(final_results)} 个结果，最高相似度 {best_similarity_value:.4f}")
 
         # 选择最佳匹配的音频
         assistant_message = None
@@ -288,12 +268,12 @@ async def process_chat_message(
             ]
 
             if eligible_results:
-                # 随机选择一个达到门槛的音频片段
-                selected_result = random.choice(eligible_results)
+                # 选择相似度最高的音频片段（不再随机）
+                selected_result = max(eligible_results, key=lambda x: x.similarity_score)
                 has_audio_match = True
                 audio_segment = selected_result.segment
                 best_similarity = selected_result.similarity_score  # 使用选中片段的相似度
-                logger.info(f"找到 {len(eligible_results)} 个匹配音频片段（相似度≥{settings.AUDIO_REPLY_THRESHOLD}），随机选择片段ID={audio_segment.id}，相似度 {best_similarity:.4f}")
+                logger.info(f"找到 {len(eligible_results)} 个匹配音频片段（相似度≥{settings.AUDIO_REPLY_THRESHOLD}），选择最高相似度片段ID={audio_segment.id}，相似度 {best_similarity:.4f}")
             elif search_result.results:
                 # 没有达到门槛的结果，但有搜索结果
                 # 如果最佳匹配的相似度 >= 0.8 * AUDIO_REPLY_THRESHOLD，也返回（80%规则）

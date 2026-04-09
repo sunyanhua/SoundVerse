@@ -106,11 +106,11 @@ class Settings(BaseSettings):
     VECTOR_DIMENSION: int = 1024  # text-embedding-v4 维度
     FAISS_INDEX_PATH: str = "data/faiss_index.bin"  # 保留兼容性，将逐步迁移到DashVector
     SEARCH_TOP_K: int = 5
-    SIMILARITY_THRESHOLD: float = 0.25  # 进一步降低阈值，匹配0.2-0.4的相似度范围
+    SIMILARITY_THRESHOLD: float = 0.10  # 临时降低阈值以查看实际相似度
 
     # 聊天回复配置
-    AUDIO_REPLY_THRESHOLD: float = 0.35  # 直接播放门槛，从0.55降低到0.35，使更多语义相近的结果能返回
-    AUDIO_SUGGEST_THRESHOLD: float = 0.25  # 引导播放门槛，从0.35降低到0.25，与SIMILARITY_THRESHOLD对齐
+    AUDIO_REPLY_THRESHOLD: float = 0.15  # 临时降低以进行调试
+    AUDIO_SUGGEST_THRESHOLD: float = 0.10  # 临时降低以进行调试
 
     # 缓存配置
     CACHE_TTL: int = 3600  # 1小时
