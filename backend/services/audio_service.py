@@ -18,7 +18,7 @@ except ImportError:
     process_audio_source_task = None
 
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, defer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.audio import AudioSource, AudioSegment, FavoriteSegment
@@ -245,6 +245,9 @@ async def search_audio_segments(
 
     # 从数据库获取完整的片段信息
     stmt = select(AudioSegment).options(
+        defer(AudioSegment.vector),
+        defer(AudioSegment.vector_dimension),
+        defer(AudioSegment.vector_updated_at),
         selectinload(AudioSegment.source)
     ).where(
         AudioSegment.review_status == "approved",
@@ -327,6 +330,9 @@ async def get_audio_segment(
     获取音频片段详情
     """
     stmt = select(AudioSegment).options(
+        defer(AudioSegment.vector),
+        defer(AudioSegment.vector_dimension),
+        defer(AudioSegment.vector_updated_at),
         selectinload(AudioSegment.source)
     ).where(AudioSegment.id == segment_id)
     result = await db.execute(stmt)
@@ -582,19 +588,35 @@ async def get_recommended_audios(
     """
     获取推荐音频片段
     """
-    from sqlalchemy import select, func
-    from sqlalchemy.orm import selectinload
+    import random
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload, defer
     from shared.models.audio import AudioSegment
     from shared.schemas.audio import AudioSegmentResponse
 
-    # 随机获取已审核通过的音频片段
+    # 先快速获取已审核通过的音频片段ID（只取最近100条避免全表扫描）
+    id_stmt = select(AudioSegment.id).where(
+        AudioSegment.review_status == "approved"
+    ).order_by(AudioSegment.created_at.desc()).limit(100)
+    
+    id_result = await db.execute(id_stmt)
+    ids = [row[0] for row in id_result.all()]
+    
+    if not ids:
+        return []
+    
+    # 随机选择
+    selected_ids = random.sample(ids, min(limit, len(ids)))
+    
+    # 再获取完整数据
     stmt = select(AudioSegment).options(
+        defer(AudioSegment.vector),
+        defer(AudioSegment.vector_dimension),
+        defer(AudioSegment.vector_updated_at),
         selectinload(AudioSegment.source)
     ).where(
-        AudioSegment.review_status == "approved"
-    ).order_by(
-        func.random()
-    ).limit(limit)
+        AudioSegment.id.in_(selected_ids)
+    )
 
     result = await db.execute(stmt)
     segments = result.scalars().all()
@@ -620,8 +642,6 @@ async def get_recommended_audios(
         responses.append(response)
 
     return responses
-
-
 async def get_audio_segments_paginated(
     db: AsyncSession,
     page: int = 1,
@@ -638,12 +658,15 @@ async def get_audio_segments_paginated(
     获取分页的音频片段列表（用于管理界面）
     """
     from sqlalchemy import select, func, and_, or_
-    from sqlalchemy.orm import selectinload
+    from sqlalchemy.orm import selectinload, defer
     from shared.models.audio import AudioSegment, AudioSource
     from shared.schemas.audio import AudioSegmentResponse
 
     # 构建查询
     stmt = select(AudioSegment).options(
+        defer(AudioSegment.vector),
+        defer(AudioSegment.vector_dimension),
+        defer(AudioSegment.vector_updated_at),
         selectinload(AudioSegment.source)
     )
 
@@ -839,37 +862,30 @@ async def get_audio_stats(db: AsyncSession) -> dict:
         users: 注册用户总数
         sources: 音频源总数
     """
-    from sqlalchemy import select, func
+    from sqlalchemy import select, func, case
     from shared.models.user import User
     
-    # 统计音频片段总数
-    total_result = await db.execute(select(func.count(AudioSegment.id)))
-    total = total_result.scalar() or 0
-    
-    # 统计已审核通过数量
-    approved_result = await db.execute(
-        select(func.count(AudioSegment.id)).where(AudioSegment.review_status == "approved")
+    # 一次性查询所有音频片段统计数据
+    stats_result = await db.execute(
+        select(
+            func.count(AudioSegment.id).label('total'),
+            func.sum(case((AudioSegment.review_status == "approved", 1), else_=0)).label('approved'),
+            func.sum(case((AudioSegment.review_status == "pending", 1), else_=0)).label('pending'),
+            func.sum(case((AudioSegment.review_status == "rejected", 1), else_=0)).label('rejected'),
+        )
     )
-    approved = approved_result.scalar() or 0
+    stats_row = stats_result.one()
+    total = stats_row.total or 0
+    approved = int(stats_row.approved) if stats_row.approved else 0
+    pending = int(stats_row.pending) if stats_row.pending else 0
+    rejected = int(stats_row.rejected) if stats_row.rejected else 0
     
-    # 统计待审核数量
-    pending_result = await db.execute(
-        select(func.count(AudioSegment.id)).where(AudioSegment.review_status == "pending")
+    # 并发查询用户数和音频源数
+    users_result, sources_result = await asyncio.gather(
+        db.execute(select(func.count(User.id))),
+        db.execute(select(func.count(AudioSource.id)))
     )
-    pending = pending_result.scalar() or 0
-    
-    # 统计已拒绝数量
-    rejected_result = await db.execute(
-        select(func.count(AudioSegment.id)).where(AudioSegment.review_status == "rejected")
-    )
-    rejected = rejected_result.scalar() or 0
-    
-    # 统计用户总数
-    users_result = await db.execute(select(func.count(User.id)))
     users = users_result.scalar() or 0
-    
-    # 统计音频源总数
-    sources_result = await db.execute(select(func.count(AudioSource.id)))
     sources = sources_result.scalar() or 0
     
     return {
@@ -880,7 +896,6 @@ async def get_audio_stats(db: AsyncSession) -> dict:
         "users": users,
         "sources": sources,
     }
-
 
 async def get_user_audio_sources(
     db: AsyncSession,
@@ -899,7 +914,7 @@ async def get_user_audio_sources(
         total_pages: 总页数
     """
     from sqlalchemy import select, func
-    from sqlalchemy.orm import selectinload
+    from sqlalchemy.orm import selectinload, defer
 
     from sqlalchemy import and_
 
