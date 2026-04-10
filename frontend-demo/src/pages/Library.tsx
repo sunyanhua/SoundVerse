@@ -40,7 +40,9 @@ export default function Library() {
     setLoading(true);
     try {
       const response = await api.get<{ data: AudioClip[]; total: number }>('/v1/audio/segments?limit=100');
-      setClips(response?.data || []);
+      // 过滤掉任何 null 或 undefined 的元素
+      const validClips = (response?.data || []).filter(clip => clip && typeof clip === 'object');
+      setClips(validClips);
     } catch (error) {
       console.error('Error loading clips:', error);
       setClips([]);
@@ -53,24 +55,36 @@ export default function Library() {
 
     try {
       await api.delete(`/v1/audio/favorite/${id}`);
-      setClips(clips.filter(clip => clip.id !== id));
+      setClips((clips || []).filter(clip => clip?.id !== id));
     } catch (error) {
       console.error('Error deleting clip:', error);
     }
   };
 
-  const filteredClips = clips.filter(clip => {
-    const matchesSearch = clip.transcription.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         clip.title.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesEmotion = !selectedEmotion || selectedEmotion === '全部' || clip.emotion === selectedEmotion;
-    const matchesTag = !selectedTag || clip.tags.includes(selectedTag);
+  const filteredClips = (clips || []).filter(clip => {
+    if (!clip || typeof clip !== 'object') return false;
+
+    // 安全地获取搜索词
+    const searchLower = String(searchTerm || '').toLowerCase();
+
+    // 安全地获取文本字段
+    const transcription = String(clip.transcription || '');
+    const title = String(clip.title || '');
+
+    const matchesSearch = searchLower === '' ||
+                         transcription.toLowerCase().includes(searchLower) ||
+                         title.toLowerCase().includes(searchLower);
+
+    const matchesEmotion = !selectedEmotion || selectedEmotion === '全部' || clip?.emotion === selectedEmotion;
+    const matchesTag = !selectedTag || (clip?.tags || []).includes(selectedTag);
 
     return matchesSearch && matchesEmotion && matchesTag;
   });
 
   // 按来源分组
-  const groupedClips: GroupedClips = filteredClips.reduce((groups, clip) => {
-    const sourceTitle = clip.source_title || '未分类节目';
+  const groupedClips: GroupedClips = (filteredClips || []).reduce((groups, clip) => {
+    if (!clip || typeof clip !== 'object') return groups;
+    const sourceTitle = clip?.source_title || '未分类节目';
     if (!groups[sourceTitle]) {
       groups[sourceTitle] = [];
     }
@@ -187,22 +201,22 @@ export default function Library() {
                 {/* 分组内容 */}
                 {expandedGroups.has(sourceTitle) && (
                   <div className="p-4 space-y-4">
-                    {sourceClips.map((clip) => (
+                    {sourceClips.map((clip, idx) => (
                       <div
-                        key={clip.id}
+                        key={clip?.id || idx}
                         className="bg-gray-50 rounded-xl p-4 hover:shadow-md transition-shadow"
                       >
                         <div className="flex items-start justify-between mb-2">
                           <div className="flex-1">
                             <p className="text-gray-700 text-sm mb-2 leading-relaxed">
-                              {cleanTranscription(clip.transcription)}
+                              {cleanTranscription(clip.transcription || '')}
                             </p>
 
                             <div className="flex flex-wrap gap-2">
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
-                                {clip.emotion || '平静'}
+                                {clip?.emotion || '平静'}
                               </span>
-                              {clip.tags?.map((tag, index) => (
+                              {(clip?.tags || []).map((tag, index) => (
                                 <span
                                   key={index}
                                   className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"
@@ -213,13 +227,13 @@ export default function Library() {
                               ))}
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
                                 <Clock className="w-3 h-3 mr-1" />
-                                {clip.duration}秒
+                                {clip?.duration || 0}秒
                               </span>
                             </div>
                           </div>
 
                           <button
-                            onClick={() => deleteClip(clip.id)}
+                            onClick={() => clip?.id && deleteClip(clip.id)}
                             className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors ml-2"
                             title="删除"
                           >
@@ -228,11 +242,11 @@ export default function Library() {
                         </div>
 
                         <AudioPlayer
-                          audioUrl={clip.audio_url}
+                          audioUrl={clip.audio_url || ''}
                           title={clip.title || '语弹片段'}
-                          duration={clip.duration}
+                          duration={clip.duration || 0}
                           onShare={() => {
-                            navigator.clipboard.writeText(`分享语弹：${clip.transcription}`);
+                            navigator.clipboard.writeText(`分享语弹：${clip.transcription || ''}`);
                             alert('分享链接已复制到剪贴板');
                           }}
                         />
