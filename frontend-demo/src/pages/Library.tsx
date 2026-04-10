@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Search, Filter, Tag, Clock, Trash2, Music, ChevronDown, ChevronRight } from 'lucide-react';
 import { api, AudioClip } from '../lib/api';
 import AudioPlayer from '../components/AudioPlayer';
@@ -61,42 +61,49 @@ export default function Library() {
     }
   };
 
-  const filteredClips = (clips || []).filter(clip => {
-    if (!clip || typeof clip !== 'object') return false;
+  // 使用 useMemo 缓存筛选结果，避免重复计算
+  const filteredClips = useMemo(() => {
+    return (clips || []).filter(clip => {
+      if (!clip || typeof clip !== 'object') return false;
 
-    // 安全地获取搜索词
-    const searchLower = String(searchTerm || '').toLowerCase();
+      // 安全地获取搜索词
+      const searchLower = String(searchTerm || '').toLowerCase();
 
-    // 安全地获取文本字段
-    const transcription = String(clip.transcription || '');
-    const title = String(clip.title || '');
+      // 安全地获取文本字段
+      const transcription = String(clip.transcription || '');
+      const title = String(clip.title || '');
 
-    const matchesSearch = searchLower === '' ||
-                         transcription.toLowerCase().includes(searchLower) ||
-                         title.toLowerCase().includes(searchLower);
+      const matchesSearch = searchLower === '' ||
+                           transcription.toLowerCase().includes(searchLower) ||
+                           title.toLowerCase().includes(searchLower);
 
-    const matchesEmotion = !selectedEmotion || selectedEmotion === '全部' || clip?.emotion === selectedEmotion;
-    const matchesTag = !selectedTag || (clip?.tags || []).includes(selectedTag);
+      const matchesEmotion = !selectedEmotion || selectedEmotion === '全部' || clip?.emotion === selectedEmotion;
+      const matchesTag = !selectedTag || (clip?.tags || []).includes(selectedTag);
 
-    return matchesSearch && matchesEmotion && matchesTag;
-  });
-
-  // 按来源分组
-  const groupedClips: GroupedClips = (filteredClips || []).reduce((groups, clip) => {
-    if (!clip || typeof clip !== 'object') return groups;
-    const sourceTitle = clip?.source_title || '未分类节目';
-    if (!groups[sourceTitle]) {
-      groups[sourceTitle] = [];
-    }
-    groups[sourceTitle].push(clip);
-    return groups;
-  }, {} as GroupedClips);
-
-  // 默认展开所有分组
-  useEffect(() => {
-    const allTitles = Object.keys(groupedClips);
-    setExpandedGroups(new Set(allTitles));
+      return matchesSearch && matchesEmotion && matchesTag;
+    });
   }, [clips, searchTerm, selectedEmotion, selectedTag]);
+
+  // 使用 useMemo 缓存分组结果
+  const groupedClips: GroupedClips = useMemo(() => {
+    return (filteredClips || []).reduce((groups, clip) => {
+      if (!clip || typeof clip !== 'object') return groups;
+      const sourceTitle = clip?.source_title || '未分类节目';
+      if (!groups[sourceTitle]) {
+        groups[sourceTitle] = [];
+      }
+      groups[sourceTitle].push(clip);
+      return groups;
+    }, {} as GroupedClips);
+  }, [filteredClips]);
+
+  // 默认展开所有分组 - 只在 clips 首次加载或数量变化时执行
+  useEffect(() => {
+    if (clips.length > 0 && expandedGroups.size === 0) {
+      const allTitles = Object.keys(groupedClips);
+      setExpandedGroups(new Set(allTitles));
+    }
+  }, [clips.length]); // 只依赖 clips 数量，避免搜索时频繁更新
 
   const toggleGroup = (sourceTitle: string) => {
     setExpandedGroups(prev => {
