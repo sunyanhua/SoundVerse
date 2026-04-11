@@ -204,11 +204,22 @@ async def process_chat_message(
 
     # 搜索意图重写：提取关键词并扩展搜索
     try:
-        # 提取关键词（最多3个）
-        keywords = await extract_keywords_from_query(message)
+        # 并行执行关键词提取和查询改写，提高性能
+        import asyncio
+        keywords_task = extract_keywords_from_query(message)
+        rewritten_query_task = rewrite_query_to_radio_dialogue(message)
 
-        # 语义桥接：将用户查询改写成广播口语对白
-        rewritten_query = await rewrite_query_to_radio_dialogue(message)
+        keywords, rewritten_query = await asyncio.gather(
+            keywords_task, rewritten_query_task, return_exceptions=True
+        )
+
+        # 处理可能的异常
+        if isinstance(keywords, Exception):
+            logger.warning(f"关键词提取失败: {keywords}")
+            keywords = []
+        if isinstance(rewritten_query, Exception):
+            logger.warning(f"查询改写失败: {rewritten_query}")
+            rewritten_query = None
 
         # 构建查询列表：原句 + 改写后的口语对白（如果成功）+ 关键词
         queries = [message]

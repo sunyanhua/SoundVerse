@@ -2,6 +2,7 @@
 聊天相关API
 """
 import logging
+import random
 from typing import List, Optional
 from datetime import datetime
 
@@ -619,21 +620,36 @@ async def get_random_preset_prompts(
 ) -> List[PresetPromptResponse]:
     """
     获取随机预置提示词
+    返回当前用户自己的提示词（无论审核状态）+ 其他用户已审核通过的提示词
     """
     try:
-        from sqlalchemy import select, func
+        from sqlalchemy import select
+        from sqlalchemy.sql import or_, and_
 
-        # 构建查询
-        query = select(PresetPrompt).where(PresetPrompt.review_status == "approved")
+        # 构建查询：当前用户的所有提示词 + 其他用户已审核通过的提示词
+        # 过滤掉 query_text 为空的记录（schema要求至少1个字符）
+        query = select(PresetPrompt).where(
+            and_(
+                PresetPrompt.query_text.isnot(None),
+                PresetPrompt.query_text != "",
+                or_(
+                    PresetPrompt.user_id == current_user.id,  # 当前用户的所有提示词
+                    PresetPrompt.review_status == "approved"   # 其他用户已审核通过的
+                )
+            )
+        )
 
         if category:
             query = query.where(PresetPrompt.category == category)
 
-        # 随机排序并限制数量
-        query = query.order_by(func.random()).limit(count)
-
+        # 获取所有匹配的记录，然后在Python中随机选择
+        # 避免不同数据库random()函数的差异问题
         result = await db.execute(query)
-        preset_prompts = result.scalars().all()
+        all_prompts = list(result.scalars().all())
+
+        # Python中随机打乱并取前count个
+        random.shuffle(all_prompts)
+        preset_prompts = all_prompts[:count]
 
         # 转换为响应模型列表
         responses = []
@@ -682,9 +698,10 @@ async def like_message(
 ) -> dict:
     """
     点赞消息并可选保存为预设提示词
+    如果点赞的是助手回复，会保存对应的用户提问词
     """
     try:
-        from sqlalchemy import select
+        from sqlalchemy import select, desc
 
         # 查找消息
         result = await db.execute(
@@ -706,10 +723,42 @@ async def like_message(
 
         # 如果用户选择保存为预设提示词
         if request.like and request.save_as_preset:
-            # 检查是否已存在相同的预设提示词
+            # 确定要保存的查询文本
+            query_text_to_save = None
+            original_message_id_to_save = None
+
+            if message.role == "assistant":
+                # 如果点赞的是助手回复，查找同一会话中该消息之前的用户提问
+                user_msg_result = await db.execute(
+                    select(ChatMessage)
+                    .where(
+                        ChatMessage.session_id == message.session_id,
+                        ChatMessage.role == "user",
+                        ChatMessage.created_at < message.created_at,
+                    )
+                    .order_by(desc(ChatMessage.created_at))
+                    .limit(1)
+                )
+                user_message = user_msg_result.scalar_one_or_none()
+
+                if user_message:
+                    query_text_to_save = user_message.content
+                    original_message_id_to_save = user_message.id
+                    logger.info(f"点赞助手回复，保存对应的用户提问: '{query_text_to_save[:50]}...'")
+                else:
+                    # 找不到对应的用户提问，使用助手回复前的内容（备选）
+                    query_text_to_save = message.content
+                    original_message_id_to_save = message_id
+                    logger.warning(f"找不到助手回复对应的用户提问，使用助手内容作为备选")
+            else:
+                # 如果点赞的是用户消息，直接保存该消息内容
+                query_text_to_save = message.content
+                original_message_id_to_save = message_id
+
+            # 检查是否已存在相同的预设提示词（基于用户提问内容）
             existing_result = await db.execute(
                 select(PresetPrompt).where(
-                    PresetPrompt.original_message_id == message_id,
+                    PresetPrompt.query_text == query_text_to_save,
                     PresetPrompt.user_id == current_user.id,
                 )
             )
@@ -719,8 +768,8 @@ async def like_message(
                 # 创建新的预设提示词
                 preset_prompt = PresetPrompt(
                     user_id=current_user.id,
-                    original_message_id=message_id,
-                    query_text=message.content,
+                    original_message_id=original_message_id_to_save,
+                    query_text=query_text_to_save,
                     category=request.category,
                     emotion=None,  # 可以从消息中提取情感，这里暂时留空
                     tags=request.tags or [],
@@ -729,6 +778,7 @@ async def like_message(
                     review_status="pending",
                 )
                 db.add(preset_prompt)
+                logger.info(f"创建新的预设提示词: '{query_text_to_save[:50]}...'")
             else:
                 # 更新现有预设提示词的分类和标签
                 if request.category:
@@ -736,6 +786,7 @@ async def like_message(
                 if request.tags:
                     existing_prompt.tags = request.tags
                 existing_prompt.like_count += 1
+                logger.info(f"更新现有预设提示词，点赞数增加到 {existing_prompt.like_count}")
 
         await db.commit()
 
