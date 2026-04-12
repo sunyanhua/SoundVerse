@@ -23,6 +23,7 @@ from ai_models.asr_service import asr_service, recognize_audio_file
 from ai_models.nlp_service import get_text_vector
 from services.quality_check import check_segment_quality
 from services.emotion_service import analyze_emotion
+from services.music_detection_service import filter_music_segments
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,9 @@ class AudioProcessingService:
         self.absolute_max_duration = 20.0  # 绝对最大时长20秒（超过必须拆分）
         self.buffer_start = 0.2  # 起始提前200ms
         self.buffer_end = 0.3  # 结束延后300ms
+        # 歌曲检测配置
+        self.enable_music_detection = getattr(settings, 'ENABLE_MUSIC_DETECTION', True)
+        self.music_detection_threshold = getattr(settings, 'MUSIC_DETECTION_THRESHOLD', 0.65)
 
     async def process_audio_source(
         self,
@@ -130,7 +134,7 @@ class AudioProcessingService:
 
                     # 提取音频片段
                     segment_file_path = await self.extract_audio_segment(
-                        audio_file_path, start_time, end_time
+                        audio_file_path, start_time, end_time, text=transcription
                     )
 
                     if not segment_file_path:
@@ -372,6 +376,17 @@ class AudioProcessingService:
 
             # 5. 合并相邻短句（提高语义连贯性）
             merged_segments = self._merge_short_segments(optimized_segments)
+
+            # 6. 歌曲检测与过滤（如果启用）
+            if self.enable_music_detection:
+                logger.info("开始歌曲检测...")
+                merged_segments, music_info = await filter_music_segments(
+                    merged_segments,
+                    audio_file_path,
+                    threshold=self.music_detection_threshold
+                )
+                if music_info:
+                    logger.info(f"检测到并过滤了 {len(music_info)} 个歌曲片段")
 
             return merged_segments
 
@@ -689,6 +704,11 @@ class AudioProcessingService:
         """
         批量优化所有片段边界（只加载一次音频，提高性能）
 
+        优化策略：
+        1. 起始边界：往前找200ms静音点
+        2. 结束边界：往后找1000ms静音点（延长以确保捕捉到完整结尾）
+        3. 文本完整性检查：如果文本以不完整词语结尾，延长音频边界
+
         Args:
             audio_file_path: 音频文件路径
             segments: 原始片段列表 [(start, end, text), ...]
@@ -712,7 +732,7 @@ class AudioProcessingService:
                 start_ms = int(start_time * 1000)
                 end_ms = int(end_time * 1000)
 
-                # 起始边界：往前找100ms静音点（简化）
+                # 起始边界：往前找200ms静音点（简化）
                 search_start = max(0, start_ms - 200)
                 if search_start < start_ms:
                     pre_segment = audio[search_start:start_ms]
@@ -727,20 +747,32 @@ class AudioProcessingService:
                 else:
                     optimized_start_ms = start_ms
 
-                # 结束边界：往后找100ms静音点（简化）
-                search_end = min(audio_duration_ms, end_ms + 300)
+                # 结束边界：往后找1000ms静音点（延长以确保完整结尾）
+                # 原来只有300ms，经常无法捕捉到完整结尾
+                search_end = min(audio_duration_ms, end_ms + 1000)
                 if end_ms < search_end:
                     post_segment = audio[end_ms:search_end]
                     post_silences = detect_nonsilent(
                         post_segment, min_silence_len=100, silence_thresh=-40, seek_step=20
                     )
                     if post_silences:
+                        # 找到第一个非静音区间的开始点，这就是下一个声音的开始
+                        # 我们在它之前100ms处截断，确保不会包含下一个词的开头
                         first_sound_start = post_silences[0][0]
-                        optimized_end_ms = end_ms + first_sound_start - 50
+                        # 给结尾留一些空间，确保完整（从300ms延长到800ms搜索范围）
+                        buffer_ms = 100 if first_sound_start < 500 else 50
+                        optimized_end_ms = end_ms + first_sound_start - buffer_ms
                     else:
-                        optimized_end_ms = end_ms
+                        # 如果1000ms内都是静音，说明当前片段确实结束了
+                        # 但仍然延长一点以确保完整性（最多延长500ms）
+                        optimized_end_ms = end_ms + min(500, search_end - end_ms)
                 else:
                     optimized_end_ms = end_ms
+
+                # 文本完整性检查：检测文本是否以不完整词语结尾
+                optimized_end_ms = self._adjust_end_by_text_completeness(
+                    text, end_ms, optimized_end_ms, audio_duration_ms
+                )
 
                 # 转换为秒并确保合理范围
                 optimized_start = max(0.0, optimized_start_ms / 1000.0)
@@ -760,6 +792,86 @@ class AudioProcessingService:
             logger.warning(f"批量优化边界失败: {e}, 使用原始边界")
             # 返回原始片段
             return [(s, e, t) for s, e, t in segments if t and e > s]
+
+    def _adjust_end_by_text_completeness(
+        self,
+        text: str,
+        original_end_ms: int,
+        optimized_end_ms: int,
+        audio_duration_ms: int
+    ) -> int:
+        """
+        根据文本完整性调整结束边界
+
+        检测文本是否以不完整词语结尾（如"对"、"男"等明显未说完的词）
+        如果是，则延长音频边界以确保捕捉到完整词语
+
+        Args:
+            text: 转录文本
+            original_end_ms: 原始结束时间（毫秒）
+            optimized_end_ms: 优化后的结束时间（毫秒）
+            audio_duration_ms: 音频总时长（毫秒）
+
+        Returns:
+            调整后的结束时间（毫秒）
+        """
+        # 常见的不完整结尾词（需要延长的信号）
+        # 这些词通常出现在句子中间，很少作为完整句子的结尾
+        incomplete_endings = {
+            # 单字结尾（极可能是截断）
+            '对', '的', '是', '男', '女', '我', '你', '他', '她', '它',
+            '这', '那', '有', '在', '到', '给', '让', '把', '被', '将',
+            '和', '跟', '同', '与', '或', '但', '而', '因', '于', '则',
+            '很', '太', '最', '更', '非', '不', '没', '别', '还', '又',
+            # 常见词语前半部分
+            '我们', '你们', '他们', '她们', '它们', '这些', '那些',
+            '这个', '那个', '什么', '怎么', '这么', '那么', '多少',
+        }
+
+        # 清理文本，只保留中文
+        cleaned_text = ''.join(char for char in text if '\u4e00' <= char <= '\u9fff')
+
+        # 检查文本结尾
+        should_extend = False
+
+        # 1. 检查是否以不完整词结尾（最后2个字符）
+        if len(cleaned_text) >= 2:
+            last_two = cleaned_text[-2:]
+            if last_two in incomplete_endings:
+                should_extend = True
+                logger.info(f"检测到不完整结尾词 '{last_two}'，将延长音频边界")
+
+        # 2. 检查是否以单字结尾（且不是常见句尾词）
+        if len(cleaned_text) >= 1:
+            last_char = cleaned_text[-1]
+            # 常见句尾词（通常是完整的）
+            sentence_endings = {'了', '啊', '呢', '吧', '吗', '哦', '嗯', '唉', '哟', '哇'}
+            if last_char not in sentence_endings and len(cleaned_text) >= 3:
+                # 如果最后一个字不是句尾语气词，且文本较长，可能是截断
+                # 检查倒数第2-3个字符是否构成完整词
+                if len(cleaned_text) >= 3:
+                    last_three = cleaned_text[-3:]
+                    # 如果最后三个字符中没有标点符号，可能是截断
+                    has_punct_near_end = any(p in text[-6:] for p in ['。', '？', '！', '，', '；'])
+                    if not has_punct_near_end:
+                        should_extend = True
+                        logger.info(f"检测到可能不完整的单字结尾 '{last_char}'，将延长音频边界")
+
+        # 3. 如果文本最后一个字后面紧跟标点，但ASR没有包含进去
+        # 通过检查原始文本的最后几个字符
+        text_end = text.strip()[-5:] if len(text.strip()) >= 5 else text.strip()
+        if text_end and text_end[-1] not in '。！？.!?':
+            # 结尾没有标点，可能是截断
+            if len(cleaned_text) >= 3:
+                should_extend = True
+                logger.info(f"检测到无标点结尾，将延长音频边界")
+
+        if should_extend:
+            # 延长500ms以确保捕捉到完整结尾
+            extended_end = optimized_end_ms + 500
+            return min(extended_end, audio_duration_ms)
+
+        return optimized_end_ms
 
     def _is_host_intro_pattern(self, text: str) -> bool:
         """
@@ -1002,6 +1114,7 @@ class AudioProcessingService:
         start_time: float,
         end_time: float,
         output_format: str = "mp3",
+        text: str = "",
     ) -> Optional[str]:
         """
         从音频源中提取指定时间段的片段
@@ -1011,6 +1124,7 @@ class AudioProcessingService:
             start_time: 开始时间（秒）
             end_time: 结束时间（秒）
             output_format: 输出格式
+            text: 转录文本（用于完整性检查）
 
         Returns:
             提取的片段文件路径，失败返回None
@@ -1022,7 +1136,24 @@ class AudioProcessingService:
 
             # 使用pydub提取片段
             audio = PydubAudioSegment.from_file(source_file_path)
-            segment = audio[start_time * 1000:end_time * 1000]  # pydub使用毫秒
+            audio_duration_ms = len(audio)
+
+            # 转换为毫秒
+            start_ms = int(start_time * 1000)
+            end_ms = int(end_time * 1000)
+
+            # 额外检查：如果文本以不完整词语结尾，再延长一点
+            if text:
+                extra_buffer_ms = self._calculate_extra_buffer_for_text(text)
+                if extra_buffer_ms > 0:
+                    end_ms = min(audio_duration_ms, end_ms + extra_buffer_ms)
+                    logger.info(f"文本完整性检查：延长 {extra_buffer_ms}ms 以确保完整结尾")
+
+            # 确保不超出音频范围
+            start_ms = max(0, start_ms)
+            end_ms = min(audio_duration_ms, end_ms)
+
+            segment = audio[start_ms:end_ms]
 
             # 导出
             segment.export(str(output_path), format=output_format)
@@ -1032,6 +1163,42 @@ class AudioProcessingService:
         except Exception as e:
             logger.error(f"提取音频片段失败: {str(e)}")
             return None
+
+    def _calculate_extra_buffer_for_text(self, text: str) -> int:
+        """
+        根据文本完整性计算额外的缓冲时间
+
+        Args:
+            text: 转录文本
+
+        Returns:
+            需要延长的毫秒数
+        """
+        # 常见的不完整结尾词
+        incomplete_endings = {
+            '对', '的', '是', '男', '女', '我', '你', '他', '她', '它',
+            '这', '那', '有', '在', '到', '给', '让', '把', '被', '将',
+            '和', '跟', '同', '与', '或', '但', '而', '因', '于', '则',
+            '很', '太', '最', '更', '非', '不', '没', '别', '还', '又',
+            '我们', '你们', '他们', '她们', '它们', '这些', '那些',
+            '这个', '那个', '什么', '怎么', '这么', '那么', '多少',
+        }
+
+        # 清理文本
+        cleaned_text = ''.join(char for char in text if '\u4e00' <= char <= '\u9fff')
+
+        if len(cleaned_text) >= 2:
+            last_two = cleaned_text[-2:]
+            if last_two in incomplete_endings:
+                return 300  # 延长300ms
+
+        # 检查是否无标点结尾
+        text_end = text.strip()[-5:] if len(text.strip()) >= 5 else text.strip()
+        if text_end and text_end[-1] not in '。！？.!?':
+            if len(cleaned_text) >= 3:
+                return 200  # 延长200ms
+
+        return 0
 
     async def process_audio_segment(
         self,

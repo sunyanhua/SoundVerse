@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     MIN_SEGMENT_DURATION: float = 2.0  # 最短片段时长（秒）（符合CLAUDE.md规范）
     MAX_SEGMENT_DURATION: float = 8.0  # 最长片段时长（秒）符合CLAUDE.md规范
 
+    # 歌曲检测配置
+    ENABLE_MUSIC_DETECTION: bool = True  # 是否启用歌曲检测
+    MUSIC_DETECTION_THRESHOLD: float = 0.65  # 歌曲检测阈值（0-1，越高越严格）
+
     # 语义搜索配置
     VECTOR_DIMENSION: int = 1024  # text-embedding-v4 维度
     FAISS_INDEX_PATH: str = "data/faiss_index.bin"  # 保留兼容性，将逐步迁移到DashVector
