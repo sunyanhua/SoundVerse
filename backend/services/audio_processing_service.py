@@ -132,6 +132,9 @@ class AudioProcessingService:
                     duration = end_time - start_time
                     logger.info(f"处理语弹 {i+1}/{total_segments}: {start_time:.2f}s - {end_time:.2f}s")
 
+                    # 如果ASR已经返回文本，直接使用；否则进行本地ASR识别
+                    transcription = asr_text.strip() if asr_text else ""
+
                     # 提取音频片段
                     segment_file_path = await self.extract_audio_segment(
                         audio_file_path, start_time, end_time, text=transcription
@@ -141,9 +144,6 @@ class AudioProcessingService:
                         logger.warning(f"提取语弹 {i+1} 失败，跳过")
                         skipped_segments.append({"index": i+1, "reason": "提取失败"})
                         continue
-
-                    # 如果ASR已经返回文本，直接使用；否则进行本地ASR识别
-                    transcription = asr_text.strip() if asr_text else ""
 
                     if not transcription:
                         # 回退到本地ASR识别
