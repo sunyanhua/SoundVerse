@@ -113,8 +113,8 @@ class Settings(BaseSettings):
     SIMILARITY_THRESHOLD: float = 0.10  # 临时降低阈值以查看实际相似度
 
     # 聊天回复配置
-    AUDIO_REPLY_THRESHOLD: float = 0.15  # 临时降低以进行调试
-    AUDIO_SUGGEST_THRESHOLD: float = 0.10  # 临时降低以进行调试
+    AUDIO_REPLY_THRESHOLD: float = 0.48  # AI实验室回复阈值
+    AUDIO_SUGGEST_THRESHOLD: float = 0.40  # 建议语弹阈值
 
     # 缓存配置
     CACHE_TTL: int = 3600  # 1小时
