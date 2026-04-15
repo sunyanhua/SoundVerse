@@ -172,7 +172,7 @@ class AudioSearchRequest(BaseModel):
     min_duration: Optional[float] = Field(None, ge=0)
     max_duration: Optional[float] = Field(None, gt=0)
     language: Optional[str] = "zh-CN"
-    limit: int = Field(10, ge=1, le=100)
+    limit: int = Field(10, ge=1, le=500)
     offset: int = Field(0, ge=0)
 
 

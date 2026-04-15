@@ -127,12 +127,12 @@ class EmotionService:
 
         scores["neutral"] = max(0.0, 1.0 - total_score * 0.3)
 
-        # 英文标签映射到中文
+        # 英文标签映射到中文（与前端Library.tsx的emotions数组匹配）
         emotion_cn_map = {
-            "happy": "喜悦",
+            "happy": "开心",
             "sad": "悲伤",
             "angry": "愤怒",
-            "surprise": "惊讶",
+            "surprise": "惊喜",
             "fear": "恐惧",
             "neutral": "平静"
         }
@@ -165,7 +165,7 @@ class EmotionService:
         result = await self.analyze_emotion(text)
         emotion = result["emotion"]
 
-        # 映射到 -1 到 1
+        # 映射到 -1 到 1（使用英文key，因为emotion_en是英文）
         sentiment_map = {
             "happy": 1.0,
             "surprise": 0.3,

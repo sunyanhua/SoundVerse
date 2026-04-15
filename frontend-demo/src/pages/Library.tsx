@@ -17,6 +17,34 @@ function cleanTranscription(text: string): string {
   return text.trim();
 }
 
+// 根据情绪返回对应的颜色样式
+function getEmotionStyles(emotion: string): string {
+  const styles: Record<string, string> = {
+    '开心': 'bg-yellow-100 text-yellow-700',
+    '惊喜': 'bg-purple-100 text-purple-700',
+    '平静': 'bg-blue-100 text-blue-700',
+    '愤怒': 'bg-red-100 text-red-700',
+    '恐惧': 'bg-gray-100 text-gray-700',
+    '悲伤': 'bg-indigo-100 text-indigo-700',
+  };
+  return styles[emotion] || 'bg-gray-100 text-gray-600';
+}
+
+// 根据标签返回对应的颜色样式
+function getTagStyles(tag: string): string {
+  const styles: Record<string, string> = {
+    '生活': 'bg-orange-100 text-orange-700',
+    '北京': 'bg-indigo-100 text-indigo-700',
+    '美食': 'bg-pink-100 text-pink-700',
+    '天气': 'bg-sky-100 text-sky-700',
+    '日常': 'bg-lime-100 text-lime-700',
+    '心情': 'bg-rose-100 text-rose-700',
+    '旅行': 'bg-cyan-100 text-cyan-700',
+    '学习': 'bg-amber-100 text-amber-700',
+  };
+  return styles[tag] || 'bg-blue-100 text-blue-700';
+}
+
 interface GroupedClips {
   [sourceTitle: string]: AudioClip[];
 }
@@ -29,7 +57,7 @@ export default function Library() {
   const [selectedTag, setSelectedTag] = useState<string>('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  const emotions = ['全部', '开心', '惊喜', '平静', '兴奋', '期待', '满足'];
+  const emotions = ['全部', '开心', '惊喜', '平静', '愤怒', '恐惧', '悲伤'];
   const allTags = ['生活', '北京', '美食', '天气', '日常', '心情', '旅行', '学习'];
 
   useEffect(() => {
@@ -39,7 +67,7 @@ export default function Library() {
   const loadClips = async () => {
     setLoading(true);
     try {
-      const response = await api.get<{ data: AudioClip[]; total: number }>('/v1/audio/segments?limit=100');
+      const response = await api.get<{ data: AudioClip[]; total: number }>('/v1/audio/segments?limit=500');
       // 过滤掉任何 null 或 undefined 的元素
       const validClips = (response?.data || []).filter(clip => clip && typeof clip === 'object');
       setClips(validClips);
@@ -220,13 +248,13 @@ export default function Library() {
                             </p>
 
                             <div className="flex flex-wrap gap-2">
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getEmotionStyles(clip?.emotion || '平静')}`}>
                                 {clip?.emotion || '平静'}
                               </span>
                               {(clip?.tags || []).map((tag, index) => (
                                 <span
                                   key={index}
-                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700"
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getTagStyles(tag)}`}
                                 >
                                   <Tag className="w-3 h-3 mr-1" />
                                   {tag}

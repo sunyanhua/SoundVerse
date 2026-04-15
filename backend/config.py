@@ -159,7 +159,13 @@ class Settings(BaseSettings):
 
     def get_database_url(self) -> str:
         """获取数据库连接URL（可在此处添加额外处理）"""
-        return self.DATABASE_URL
+        url = self.DATABASE_URL
+        # 添加字符集参数以支持中文
+        if "aiomysql" in url and "?" not in url:
+            url += "?charset=utf8mb4"
+        elif "aiomysql" in url and "charset=" not in url:
+            url += "&charset=utf8mb4"
+        return url
 
     def get_redis_url(self) -> str:
         """获取Redis连接URL"""

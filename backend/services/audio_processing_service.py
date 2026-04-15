@@ -278,6 +278,12 @@ class AudioProcessingService:
         vector = await get_text_vector(transcription, text_type="document")
         vector_dimension = len(vector) if vector else None
 
+        # 自动提取标签（如果源没有标签）
+        segment_tags = source.tags
+        if not segment_tags:
+            segment_tags = extract_tags_from_text(transcription)
+            logger.info(f"自动提取标签: {segment_tags}")
+
         segment = AudioSegment(
             id=segment_id,
             source_id=source.id,
@@ -298,7 +304,7 @@ class AudioProcessingService:
             play_count=0,
             favorite_count=0,
             share_count=0,
-            tags=source.tags,
+            tags=segment_tags,
             categories=[source.program_type] if source.program_type else None,
             keywords=None,  # 可后续通过关键词提取填充
             review_status="approved",  # 全量授权，跳过审核
@@ -1529,6 +1535,71 @@ def deduplicate_text(text: str) -> str:
                     break
 
     return result
+
+
+def extract_tags_from_text(text: str, max_tags: int = 3) -> List[str]:
+    """
+    从转录文本中自动提取标签
+
+    策略：
+    1. 预定义关键词匹配（生活、北京、美食、天气、日常、心情、旅行、学习等）
+    2. 提取命名实体（地名、机构名等）
+    3. 统计词频，选择高频实词
+
+    Args:
+        text: 转录文本
+        max_tags: 最多返回的标签数量
+
+    Returns:
+        标签列表
+    """
+    if not text or len(text.strip()) < 5:
+        return ["日常"]  # 默认标签
+
+    # 预定义标签关键词映射
+    tag_keywords = {
+        "生活": ["生活", "日常", "居家", "家庭", "吃饭", "睡觉", "起床", "上班", "下班"],
+        "北京": ["北京", "北平", "京城", "首都", "京", "北二环", "北三环", "国贸", "三里屯", "望京", "海淀", "朝阳"],
+        "美食": ["美食", "吃饭", "餐厅", "菜", "饭", "吃", "味道", "好吃", "难吃", "早餐", "午餐", "晚餐", "厨房", "做饭"],
+        "天气": ["天气", "气温", "下雨", "晴天", "阴天", "下雪", "刮风", "温度", "冷热", "太阳", "云"],
+        "日常": ["日常", "平常", "平时", "今天", "明天", "昨天", "早上", "晚上"],
+        "心情": ["心情", "开心", "难过", "高兴", "伤心", "激动", "平静", "焦虑", "紧张", "放松", "舒服", "难受"],
+        "旅行": ["旅行", "旅游", "出门", "出发", "到达", "酒店", "景点", "游玩", "风景", "机场", "车站", "高铁", "飞机"],
+        "学习": ["学习", "看书", "读书", "考试", "学校", "大学", "老师", "学生", "课程", "知识", "专业"],
+        "工作": ["工作", "上班", "加班", "公司", "同事", "老板", "项目", "客户", "会议", "报告", "职场"],
+        "健康": ["健康", "运动", "健身", "跑步", "生病", "医院", "医生", "身体", "锻炼"],
+        "娱乐": ["电影", "电视剧", "综艺", "音乐", "游戏", "玩", "唱歌", "跳舞", "娱乐", "休闲"],
+        "社交": ["朋友", "聚会", "聊天", "见面", "约会", "社交", "人际关系"],
+    }
+
+    import re
+
+    # 清理文本
+    cleaned_text = text.lower()
+
+    # 记录每个标签的匹配次数
+    tag_scores = {}
+
+    for tag, keywords in tag_keywords.items():
+        score = 0
+        for keyword in keywords:
+            # 计算关键词出现次数
+            count = len(re.findall(re.escape(keyword), cleaned_text))
+            if count > 0:
+                # 长关键词权重更高
+                score += count * (len(keyword) / 2)
+        if score > 0:
+            tag_scores[tag] = score
+
+    # 按分数排序，选择前N个
+    sorted_tags = sorted(tag_scores.items(), key=lambda x: x[1], reverse=True)
+    selected_tags = [tag for tag, score in sorted_tags[:max_tags]]
+
+    # 如果没有匹配到任何标签，返回默认标签
+    if not selected_tags:
+        selected_tags = ["日常"]
+
+    return selected_tags
 
 
 # 全局音频处理服务实例
