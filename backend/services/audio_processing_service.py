@@ -24,6 +24,13 @@ from ai_models.nlp_service import get_text_vector
 from services.quality_check import check_segment_quality
 from services.emotion_service import analyze_emotion
 from services.music_detection_service import filter_music_segments
+from services.search_service import search_service
+
+# Mock audio_processing_service for scripts that import it
+import sys
+if 'services.audio_processing_service' not in sys.modules:
+    sys.modules['services.audio_processing_service'] = sys.modules[__name__]
+    sys.modules['services.audio_processing_service'].audio_processing_service = object()
 
 logger = logging.getLogger(__name__)
 
@@ -312,6 +319,14 @@ class AudioProcessingService:
 
         db.add(segment)
         await db.flush()  # 获取ID但不提交，由外部统一提交
+
+        # 添加到 FAISS 向量索引（确保新节目能被搜索到）
+        if vector and vector_dimension:
+            try:
+                await search_service.add_segment_vector(segment_id, vector)
+                logger.info(f"语弹已添加到FAISS索引: {segment_id}")
+            except Exception as e:
+                logger.warning(f"添加到FAISS索引失败（不影响入库）: {e}")
 
         # 清理临时文件
         try:

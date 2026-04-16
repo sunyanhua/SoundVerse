@@ -293,7 +293,8 @@ async def process_chat_message(
                 has_audio_match = True
                 audio_segment = best_match.segment
                 best_similarity = best_relevance.score  # 使用匹配度作为分数
-                logger.info(f"找到匹配语弹（匹配度≥{settings.AUDIO_REPLY_THRESHOLD}）: 片段ID={audio_segment.id}, 匹配度={best_similarity:.2%}, 理由: {best_relevance.reasoning}")
+                intent_info = f", 识别意图: {best_relevance.user_intent.value}" if best_relevance.user_intent else ""
+                logger.info(f"找到匹配语弹（匹配度≥{settings.AUDIO_REPLY_THRESHOLD}）: 片段ID={audio_segment.id}, 匹配度={best_similarity:.2%}{intent_info}, 理由: {best_relevance.reasoning}")
         if has_audio_match:
             # 创建助手消息（带音频）
             assistant_message = ChatMessage(

@@ -31,8 +31,9 @@ from config import settings
 
 async def get_db_session():
     """创建数据库会话（使用配置）"""
-    # 从配置获取数据库URL，替换协议为asyncmy，替换localhost为mysql（容器内服务名）
-    db_url = settings.DATABASE_URL.replace("mysql://", "mysql+asyncmy://")
+    # 从配置获取数据库URL，只替换localhost为mysql（容器内服务名）
+    db_url = settings.DATABASE_URL
+
     # 在Docker容器内，将localhost替换为mysql服务名
     if "localhost" in db_url:
         db_url = db_url.replace("localhost", "mysql")
