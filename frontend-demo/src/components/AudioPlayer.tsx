@@ -186,23 +186,41 @@ export default function AudioPlayer({ audioUrl, title, duration, onShare }: Audi
         </div>
       )}
 
-      <div className="flex items-center gap-3">
-        <button
-          onClick={togglePlay}
-          disabled={isLoading || !!error}
-          className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white p-3 rounded-full transition-all shadow-lg hover:shadow-xl disabled:cursor-not-allowed"
-        >
-          {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-        </button>
+      <div className="flex flex-col gap-2">
+        {/* 第一行：播放按钮、时间、音量 */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={togglePlay}
+            disabled={isLoading || !!error}
+            className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-400 text-white p-2.5 rounded-full transition-all shadow-lg hover:shadow-xl disabled:cursor-not-allowed flex-shrink-0"
+          >
+            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </button>
 
-        <div className="flex-1">
-          <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
-            <span className="font-medium truncate">{title}</span>
-            <span className="text-xs">
-              {formatTime(currentTime)} / {formatTime(actualDuration)}
-            </span>
+          {/* 时间显示 */}
+          <div className="flex items-center gap-1 text-xs text-gray-500 flex-shrink-0">
+            <span>{formatTime(currentTime)}</span>
+            <span>/</span>
+            <span>{formatTime(actualDuration)}</span>
           </div>
 
+          {/* 音量控制 */}
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <Volume2 className="w-3.5 h-3.5 text-gray-400" />
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={volume}
+              onChange={handleVolumeChange}
+              className="w-16 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+            />
+          </div>
+        </div>
+
+        {/* 第二行：进度条单独一行 */}
+        <div className="w-full">
           <input
             type="range"
             min="0"
@@ -212,27 +230,6 @@ export default function AudioPlayer({ audioUrl, title, duration, onShare }: Audi
             className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
           />
         </div>
-
-        <div className="flex items-center gap-2">
-          <Volume2 className="w-4 h-4 text-gray-500" />
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            onChange={handleVolumeChange}
-            className="w-20 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
-          />
-        </div>
-
-        <button
-          onClick={handleShare}
-          className="bg-green-500 hover:bg-green-600 text-white p-2 rounded-lg transition-all shadow-md hover:shadow-lg"
-          title="分享语弹"
-        >
-          <Share2 className="w-4 h-4" />
-        </button>
       </div>
     </div>
   );

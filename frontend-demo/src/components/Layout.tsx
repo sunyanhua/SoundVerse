@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Upload, Library, Sparkles, Menu, X, LogOut, ChevronLeft, ChevronRight, Mic2 } from 'lucide-react';
+import { Upload, Library, Sparkles, Menu, X, LogOut, ChevronLeft, ChevronRight, Mic2, MessageSquare } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -17,6 +17,7 @@ export default function Layout({ children, currentPage, onNavigate }: LayoutProp
     { id: 'upload', label: '音频工坊', icon: Upload },
     { id: 'library', label: '精选语弹库', icon: Library },
     { id: 'ai-lab', label: 'AI 对话实验室', icon: Sparkles },
+    { id: 'prompts', label: '提示词管理', icon: MessageSquare },
   ];
 
   const handleSignOut = async () => {

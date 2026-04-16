@@ -5,6 +5,7 @@ import Layout from './components/Layout';
 import UploadStudio from './pages/UploadStudio';
 import Library from './pages/Library';
 import AILab from './pages/AILab';
+import PromptManager from './pages/PromptManager';
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -30,6 +31,7 @@ function AppContent() {
       {currentPage === 'upload' && <UploadStudio />}
       {currentPage === 'library' && <Library />}
       {currentPage === 'ai-lab' && <AILab />}
+      {currentPage === 'prompts' && <PromptManager />}
     </Layout>
   );
 }

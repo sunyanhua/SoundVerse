@@ -689,6 +689,113 @@ async def get_random_preset_prompts(
         )
 
 
+@router.delete("/preset-prompts/{prompt_id}")
+async def delete_preset_prompt(
+    prompt_id: str,
+    current_user: User = Depends(get_current_user_or_mock),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    删除预置提示词
+    用户只能删除自己创建的提示词
+    """
+    try:
+        from sqlalchemy import select
+
+        # 查找提示词
+        result = await db.execute(
+            select(PresetPrompt).where(PresetPrompt.id == prompt_id)
+        )
+        prompt = result.scalar_one_or_none()
+
+        if not prompt:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="提示词不存在",
+            )
+
+        # 检查权限（只能删除自己的提示词，除非管理员）
+        if prompt.user_id != current_user.id and not getattr(current_user, 'is_admin', False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="无权删除此提示词",
+            )
+
+        # 删除提示词
+        await db.delete(prompt)
+        await db.commit()
+
+        logger.info(f"用户 {current_user.id} 删除提示词 {prompt_id}")
+
+        return {
+            "message": "删除成功",
+            "prompt_id": prompt_id,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除提示词失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="删除提示词失败",
+        )
+
+
+@router.get("/preset-prompts/my", response_model=List[PresetPromptResponse])
+async def get_my_preset_prompts(
+    current_user: User = Depends(get_current_user_or_mock),
+    db: AsyncSession = Depends(get_db),
+) -> List[PresetPromptResponse]:
+    """
+    获取当前用户的所有预置提示词
+    """
+    try:
+        from sqlalchemy import select
+
+        result = await db.execute(
+            select(PresetPrompt)
+            .where(PresetPrompt.user_id == current_user.id)
+            .order_by(PresetPrompt.created_at.desc())
+        )
+        prompts = result.scalars().all()
+
+        responses = []
+        for prompt in prompts:
+            # 获取用户信息
+            user_result = await db.execute(
+                select(User).where(User.id == prompt.user_id)
+            )
+            user = user_result.scalar_one_or_none()
+
+            responses.append(
+                PresetPromptResponse(
+                    id=prompt.id,
+                    user_id=prompt.user_id,
+                    original_message_id=prompt.original_message_id,
+                    query_text=prompt.query_text,
+                    category=prompt.category,
+                    emotion=prompt.emotion,
+                    tags=prompt.tags,
+                    use_count=prompt.use_count,
+                    like_count=prompt.like_count,
+                    review_status=prompt.review_status,
+                    created_at=prompt.created_at,
+                    updated_at=prompt.updated_at,
+                    user_nickname=user.nickname if user else None,
+                )
+            )
+
+        return responses
+
+    except Exception as e:
+        logger.error(f"获取我的提示词失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="获取我的提示词失败",
+        )
+
+
 @router.put("/messages/{message_id}/like")
 async def like_message(
     message_id: str,

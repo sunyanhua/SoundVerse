@@ -281,10 +281,10 @@ export default function AILab() {
                           <p className="text-sm text-orange-500 italic mb-2">音频暂不可用</p>
                         )}
 
-                        {/* 相似度和来源信息 - 强制显示 */}
+                        {/* 匹配度和来源信息 - 强制显示 */}
                         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                           <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded font-medium">
-                            相似度: {conv.similarity_score ? (conv.similarity_score * 100).toFixed(1) : '0.0'}%
+                            匹配度: {conv.similarity_score ? (conv.similarity_score * 100).toFixed(1) : '0.0'}%
                           </span>
                           <span className="bg-gray-100 text-gray-700 px-2 py-1 rounded font-medium">
                             来源: {conv.audio_segment_preview?.source_title || conv.source_title || '未知'}

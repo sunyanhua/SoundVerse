@@ -271,10 +271,10 @@ async def process_chat_message(
 
         if search_result.results:
             # 使用匹配度评估替换相似度判断
-            # 对前3个候选语弹进行匹配度评估
-            top_candidates = search_result.results[:3]
-            best_relevance = None
-            best_match = None
+            # 对前5个候选语弹进行匹配度评估，从中随机选择满足阈值的
+            import random
+            top_candidates = search_result.results[:5]
+            candidate_relevances = []
 
             for candidate in top_candidates:
                 relevance = await relevance_service.calculate_relevance(
@@ -283,18 +283,28 @@ async def process_chat_message(
                     segment_emotion=candidate.segment.emotion
                 )
                 logger.info(f"语弹 {candidate.segment.id} 匹配度: {relevance.score:.2%} - {relevance.reasoning}")
+                candidate_relevances.append((candidate, relevance))
 
-                if best_relevance is None or relevance.score > best_relevance.score:
-                    best_relevance = relevance
-                    best_match = candidate
+            # 筛选出满足阈值的候选
+            matched_candidates = [(c, r) for c, r in candidate_relevances if r.is_match]
 
-            # 检查最佳匹配是否达到门槛
-            if best_relevance and best_relevance.is_match:
+            if matched_candidates:
+                # 如果有多个满足阈值的，随机选择一个
+                if len(matched_candidates) > 1:
+                    best_match, best_relevance = random.choice(matched_candidates)
+                    logger.info(f"从 {len(matched_candidates)} 个满足阈值的语弹中随机选择: {best_match.segment.id}")
+                else:
+                    best_match, best_relevance = matched_candidates[0]
+
                 has_audio_match = True
                 audio_segment = best_match.segment
-                best_similarity = best_relevance.score  # 使用匹配度作为分数
+                best_similarity = best_relevance.score
                 intent_info = f", 识别意图: {best_relevance.user_intent.value}" if best_relevance.user_intent else ""
-                logger.info(f"找到匹配语弹（匹配度≥{settings.AUDIO_REPLY_THRESHOLD}）: 片段ID={audio_segment.id}, 匹配度={best_similarity:.2%}{intent_info}, 理由: {best_relevance.reasoning}")
+                logger.info(f"选中语弹（匹配度≥{settings.AUDIO_REPLY_THRESHOLD}）: 片段ID={audio_segment.id}, 匹配度={best_similarity:.2%}{intent_info}, 理由: {best_relevance.reasoning}")
+            else:
+                # 没有满足阈值的，取最高分的作为建议
+                best_match, best_relevance = max(candidate_relevances, key=lambda x: x[1].score)
+                logger.info(f"无满足阈值的语弹，最高分: {best_relevance.score:.2%}")
         if has_audio_match:
             # 创建助手消息（带音频）
             assistant_message = ChatMessage(
