@@ -33,7 +33,9 @@ celery_app.conf.update(
     task_acks_late=True,
     worker_send_task_events=True,
     task_send_sent_event=True,
-    task_reject_on_worker_lost=True,
+    task_reject_on_worker_lost=False,  # 禁用：Worker丢失时不重新投递任务，避免重复处理
+    task_default_retry_delay=60,  # 默认重试延迟60秒
+    task_max_retries=3,  # 最大重试次数3次
 )
 
 # 自动发现任务

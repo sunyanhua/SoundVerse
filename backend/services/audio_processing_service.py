@@ -203,9 +203,14 @@ class AudioProcessingService:
                     created_segments.append(segment)
                     logger.info(f"创建精品语弹: {segment.id}")
 
-                    # 更新进度
+                    # 更新进度（每5个片段或最后一个时提交，减少死锁风险）
                     source.processing_progress = 0.2 + (i + 1) / total_segments * 0.7
-                    await db.commit()
+                    if (i + 1) % 5 == 0 or i == total_segments - 1:
+                        try:
+                            await db.commit()
+                        except Exception as commit_e:
+                            logger.warning(f"进度更新提交失败（继续处理）: {commit_e}")
+                            await db.rollback()
 
                 except Exception as seg_e:
                     logger.error(f"处理语弹 {i+1} 时出错: {seg_e}")

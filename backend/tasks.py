@@ -59,16 +59,24 @@ def process_audio_source_task(self, source_id: str, user_id: str) -> Optional[st
         raise
 
 
+# 全局集合，用于跟踪正在处理的音频源（防止重复处理）
+_processing_sources = set()
+
 async def _process_audio_in_celery(source_id: str, user_id: str, task_instance):
     """
-    在Celery中处理音频源
+    在Celery中处理音频源（幂等性保证）
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, func
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-    from shared.models.audio import AudioSource
+    from shared.models.audio import AudioSource, AudioSegment
     from shared.models.user import User
     from services.audio_processing_service import AudioProcessingService
     from pathlib import Path
+
+    # 检查是否已经在处理中（内存级去重）
+    if source_id in _processing_sources:
+        logger.warning(f"[Celery] 音频源 {source_id} 正在处理中，跳过重复任务")
+        return "已在处理中"
 
     service = AudioProcessingService()
 
@@ -116,7 +124,23 @@ async def _process_audio_in_celery(source_id: str, user_id: str, task_instance):
                 await db.commit()
                 return "音频文件不存在"
 
-            logger.info(f"[Celery] 开始处理音频: {source.title}")
+            # 幂等性检查：如果已经处理完成，直接返回
+            if source.processing_status == "completed":
+                logger.info(f"[Celery] 音频源 {source_id} 已处理完成，跳过")
+                return "已处理完成"
+
+            # 检查是否已有片段（部分处理的情况）
+            stmt = select(func.count(AudioSegment.id)).where(AudioSegment.source_id == source_id)
+            result = await db.execute(stmt)
+            segment_count = result.scalar()
+
+            if segment_count > 0 and source.processing_status == "completed":
+                logger.info(f"[Celery] 音频源 {source_id} 已有 {segment_count} 个片段且状态完成，跳过")
+                return "已处理完成"
+
+            # 标记为正在处理（内存级去重）
+            _processing_sources.add(source_id)
+            logger.info(f"[Celery] 开始处理音频: {source.title} (当前已有 {segment_count} 个片段)")
 
             # 使用 AudioProcessingService 处理音频
             success = await service.process_audio_source(db, source, user)
@@ -132,6 +156,8 @@ async def _process_audio_in_celery(source_id: str, user_id: str, task_instance):
         logger.error(f"[Celery] 处理异常: {source_id}, 错误: {str(e)}")
         raise
     finally:
+        # 清理内存中的处理标记
+        _processing_sources.discard(source_id)
         await engine.dispose()
 
 
