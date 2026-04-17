@@ -233,6 +233,7 @@ class PresetPromptInDB(PresetPromptBase):
     original_message_id: Optional[str] = None
     use_count: int = 0
     like_count: int = 1
+    match_count: int = 0  # 匹配语弹数
     review_status: str = "pending"
     created_at: datetime
     updated_at: datetime

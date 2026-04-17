@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, RefreshCw, MessageSquare, Tag, ThumbsUp, Calendar, AlertCircle } from 'lucide-react';
+import { Trash2, RefreshCw, MessageSquare, Tag, ThumbsUp, Calendar, AlertCircle, Play } from 'lucide-react';
 import { api } from '../lib/api';
 
 interface PresetPrompt {
@@ -10,6 +10,7 @@ interface PresetPrompt {
   tags: string[];
   like_count: number;
   use_count: number;
+  match_count?: number;  // 匹配语弹数
   review_status: string;
   created_at: string;
   user_nickname?: string;
@@ -52,6 +53,12 @@ export default function PromptManager() {
       alert('删除失败');
     }
     setDeleting(null);
+  };
+
+  // 点击提示词内容，跳转到AI对话实验室
+  const handlePromptClick = (queryText: string) => {
+    sessionStorage.setItem('ai_lab_pending_prompt', queryText);
+    window.location.href = '/?page=ai-lab';
   };
 
   // 格式化日期
@@ -125,7 +132,6 @@ export default function PromptManager() {
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">提示词内容</th>
-                    <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">分类</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">统计</th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700">创建时间</th>
                     <th className="px-6 py-4 text-center text-sm font-semibold text-gray-700">操作</th>
@@ -136,7 +142,11 @@ export default function PromptManager() {
                     <tr key={prompt.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="max-w-md">
-                          <p className="text-gray-800 text-sm line-clamp-2" title={prompt.query_text}>
+                          <p
+                            className="text-gray-800 text-sm line-clamp-2 cursor-pointer hover:text-blue-600 hover:underline transition-colors"
+                            title={prompt.query_text}
+                            onClick={() => handlePromptClick(prompt.query_text)}
+                          >
                             {prompt.query_text}
                           </p>
                           {prompt.tags && prompt.tags.length > 0 && (
@@ -155,23 +165,14 @@ export default function PromptManager() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        {prompt.category ? (
-                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${getCategoryColor(prompt.category)}`}>
-                            {prompt.category}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 text-sm">未分类</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
                         <div className="flex items-center gap-4 text-sm text-gray-600">
                           <span className="flex items-center gap-1" title="点赞数">
                             <ThumbsUp className="w-4 h-4 text-pink-500" />
                             {prompt.like_count}
                           </span>
-                          <span className="flex items-center gap-1" title="使用次数">
+                          <span className="flex items-center gap-1" title="匹配语弹数">
                             <MessageSquare className="w-4 h-4 text-blue-500" />
-                            {prompt.use_count}
+                            {prompt.match_count || 0}
                           </span>
                         </div>
                       </td>

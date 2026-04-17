@@ -18,6 +18,11 @@ export default defineConfig(() => {
           changeOrigin: true,
         },
       },
+      // Windows + Docker 环境下启用 polling 以支持热重载
+      watch: {
+        usePolling: true,
+        interval: 1000,
+      },
     },
   };
 });

@@ -191,8 +191,12 @@ async def process_chat_message(
     """
     处理聊天消息
     """
+    import time
+    start_time = time.time()
+
     # 获取或创建聊天会话
     session = await get_or_create_chat_session(db, user.id, session_id)
+    step1_time = time.time()
 
     # 保存用户消息
     user_message = ChatMessage(
@@ -258,7 +262,8 @@ async def process_chat_message(
         )
 
         best_similarity_value = final_results[0].similarity_score if final_results else 0.0
-        logger.info(f"搜索完成: 找到 {len(final_results)} 个结果，最高相似度 {best_similarity_value:.4f}")
+        search_time = time.time()
+        logger.info(f"搜索完成: 找到 {len(final_results)} 个结果，最高相似度 {best_similarity_value:.4f}, 耗时: {(search_time - step1_time)*1000:.0f}ms")
 
         # 选择最佳匹配的音频
         assistant_message = None
@@ -274,16 +279,28 @@ async def process_chat_message(
             # 对前5个候选语弹进行匹配度评估，从中随机选择满足阈值的
             import random
             top_candidates = search_result.results[:5]
-            candidate_relevances = []
 
-            for candidate in top_candidates:
-                relevance = await relevance_service.calculate_relevance(
+            # 并行计算所有候选语弹的匹配度（关键优化）
+            relevance_tasks = [
+                relevance_service.calculate_relevance(
                     user_query=message,
                     segment_text=candidate.segment.transcription or "",
                     segment_emotion=candidate.segment.emotion
                 )
+                for candidate in top_candidates
+            ]
+            relevance_results = await asyncio.gather(*relevance_tasks, return_exceptions=True)
+
+            candidate_relevances = []
+            for candidate, relevance in zip(top_candidates, relevance_results):
+                if isinstance(relevance, Exception):
+                    logger.warning(f"语弹 {candidate.segment.id} 匹配度计算失败: {relevance}")
+                    continue
                 logger.info(f"语弹 {candidate.segment.id} 匹配度: {relevance.score:.2%} - {relevance.reasoning}")
                 candidate_relevances.append((candidate, relevance))
+
+            relevance_time = time.time()
+            logger.info(f"匹配度评估完成: 评估了{len(candidate_relevances)}个语弹, 耗时: {(relevance_time - search_time)*1000:.0f}ms")
 
             # 筛选出满足阈值的候选
             matched_candidates = [(c, r) for c, r in candidate_relevances if r.is_match]
@@ -362,6 +379,9 @@ async def process_chat_message(
         # 生成建议：根据用户要求，只在页面加载时通过独立API获取建议
         # 聊天响应中不返回建议，避免每次聊天都刷新提示语句
         suggestions = []
+
+        total_time = time.time() - start_time
+        logger.info(f"聊天消息处理完成: 总耗时 {total_time*1000:.0f}ms")
 
         return ChatResponse(
             message=assistant_response,

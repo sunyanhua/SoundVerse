@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Auth from './components/Auth';
 import Layout from './components/Layout';
@@ -9,7 +9,38 @@ import PromptManager from './pages/PromptManager';
 
 function AppContent() {
   const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState('upload');
+
+  // 从 URL 参数初始化当前页面
+  const getInitialPage = () => {
+    const params = new URLSearchParams(window.location.search);
+    const page = params.get('page');
+    return page || 'upload';
+  };
+
+  const [currentPage, setCurrentPage] = useState(getInitialPage);
+
+  // 监听 URL 变化
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const params = new URLSearchParams(window.location.search);
+      const page = params.get('page');
+      if (page && ['upload', 'library', 'ai-lab', 'prompts'].includes(page)) {
+        setCurrentPage(page);
+      }
+    };
+
+    // 监听 popstate 事件（浏览器前进/后退）
+    window.addEventListener('popstate', handleUrlChange);
+    return () => window.removeEventListener('popstate', handleUrlChange);
+  }, []);
+
+  // 页面切换时更新 URL
+  const handleNavigate = (page: string) => {
+    setCurrentPage(page);
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', page);
+    window.history.pushState({}, '', url.toString());
+  };
 
   if (loading) {
     return (
@@ -27,7 +58,7 @@ function AppContent() {
   }
 
   return (
-    <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
+    <Layout currentPage={currentPage} onNavigate={handleNavigate}>
       {currentPage === 'upload' && <UploadStudio />}
       {currentPage === 'library' && <Library />}
       {currentPage === 'ai-lab' && <AILab />}

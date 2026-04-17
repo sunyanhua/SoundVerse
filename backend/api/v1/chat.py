@@ -61,7 +61,7 @@ async def get_current_user_or_mock(
     - jwt模式：尝试JWT认证，失败则返回模拟用户
     """
     # 固定模拟用户ID
-    MOCK_USER_ID = "demo-user-001"
+    MOCK_USER_ID = "preset-user-001"
 
     # 根据认证模式处理
     if settings.AUTH_MODE == "demo":
@@ -672,6 +672,7 @@ async def get_random_preset_prompts(
                     tags=prompt.tags,
                     use_count=prompt.use_count,
                     like_count=prompt.like_count,
+                    match_count=0,  # 随机提示词列表不计算匹配数，避免性能问题
                     review_status=prompt.review_status,
                     created_at=prompt.created_at,
                     updated_at=prompt.updated_at,
@@ -768,6 +769,24 @@ async def get_my_preset_prompts(
             )
             user = user_result.scalar_one_or_none()
 
+            # 计算匹配语弹数：查询该提示词内容作为用户输入时，成功匹配到语弹的聊天消息数
+            from sqlalchemy import func
+            match_count_result = await db.execute(
+                select(func.count(ChatMessage.id))
+                .where(
+                    ChatMessage.role == "assistant",
+                    ChatMessage.audio_segment_id.isnot(None),
+                    ChatMessage.session_id.in_(
+                        select(ChatMessage.session_id)
+                        .where(
+                            ChatMessage.role == "user",
+                            ChatMessage.content == prompt.query_text
+                        )
+                    )
+                )
+            )
+            match_count = match_count_result.scalar() or 0
+
             responses.append(
                 PresetPromptResponse(
                     id=prompt.id,
@@ -779,6 +798,7 @@ async def get_my_preset_prompts(
                     tags=prompt.tags,
                     use_count=prompt.use_count,
                     like_count=prompt.like_count,
+                    match_count=match_count,
                     review_status=prompt.review_status,
                     created_at=prompt.created_at,
                     updated_at=prompt.updated_at,
@@ -793,6 +813,53 @@ async def get_my_preset_prompts(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="获取我的提示词失败",
+        )
+
+
+@router.post("/preset-prompts/{prompt_id}/use")
+async def increment_prompt_use_count(
+    prompt_id: str,
+    current_user: User = Depends(get_current_user_or_mock),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    增加提示词的使用次数
+    当用户在AI对话实验室使用某个提示词时调用
+    """
+    try:
+        from sqlalchemy import select
+
+        # 查找提示词
+        result = await db.execute(
+            select(PresetPrompt).where(PresetPrompt.id == prompt_id)
+        )
+        prompt = result.scalar_one_or_none()
+
+        if not prompt:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="提示词不存在",
+            )
+
+        # 增加使用次数
+        prompt.use_count += 1
+        await db.commit()
+
+        logger.info(f"提示词 {prompt_id} 使用次数增加到 {prompt.use_count}")
+
+        return {
+            "message": "使用次数已更新",
+            "prompt_id": prompt_id,
+            "use_count": prompt.use_count,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新提示词使用次数失败: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="更新提示词使用次数失败",
         )
 
 

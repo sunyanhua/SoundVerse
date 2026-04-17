@@ -53,26 +53,34 @@ interface PresetPrompt {
   category?: string;
 }
 
+interface PromptSuggestion {
+  id: string;
+  text: string;
+}
+
 export default function AILab() {
   const { user } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
-  const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
+  const [promptSuggestions, setPromptSuggestions] = useState<PromptSuggestion[]>([]);
   const [likedMessages, setLikedMessages] = useState<Set<string>>(new Set());
   const [sessionId, setSessionId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const shuffleLocalPrompts = () => {
     const shuffled = [...fallbackPrompts].sort(() => 0.5 - Math.random());
-    setPromptSuggestions(shuffled.slice(0, 6));
+    setPromptSuggestions(shuffled.slice(0, 6).map((text, index) => ({
+      id: `local-${index}`,
+      text,
+    })));
   };
 
   const fetchRandomPrompts = async () => {
     try {
       const prompts = await api.get<PresetPrompt[]>('/v1/chat/preset-prompts/random?count=6');
       if (prompts && prompts.length > 0) {
-        setPromptSuggestions(prompts.map(p => p.query_text));
+        setPromptSuggestions(prompts.map(p => ({ id: p.id, text: p.query_text })));
       } else {
         shuffleLocalPrompts();
       }
@@ -83,6 +91,18 @@ export default function AILab() {
 
   useEffect(() => {
     fetchRandomPrompts();
+
+    // 检查是否有从提示词管理页面传来的待加载提示词
+    const pendingPrompt = sessionStorage.getItem('ai_lab_pending_prompt');
+    if (pendingPrompt) {
+      setInputText(pendingPrompt);
+      sessionStorage.removeItem('ai_lab_pending_prompt');
+      // 可选：自动聚焦输入框
+      setTimeout(() => {
+        const inputElement = document.querySelector('input[type="text"]') as HTMLInputElement;
+        inputElement?.focus();
+      }, 100);
+    }
   }, []);
 
   useEffect(() => {
@@ -197,8 +217,14 @@ export default function AILab() {
     sendMessage(inputText);
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setInputText(suggestion);
+  const handleSuggestionClick = (suggestion: PromptSuggestion) => {
+    setInputText(suggestion.text);
+    // 如果是服务器端的提示词（非本地fallback），更新使用次数
+    if (!suggestion.id.startsWith('local-')) {
+      api.post(`/v1/chat/preset-prompts/${suggestion.id}/use`, {}).catch(() => {
+        // 静默失败，不影响用户体验
+      });
+    }
   };
 
   return (
@@ -235,14 +261,14 @@ export default function AILab() {
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {promptSuggestions.map((suggestion, index) => (
+                  {promptSuggestions.map((suggestion) => (
                     <button
-                      key={index}
+                      key={suggestion.id}
                       onClick={() => handleSuggestionClick(suggestion)}
                       className="flex items-start p-4 bg-white rounded-xl shadow-md hover:shadow-lg transition-all text-left border border-gray-200 hover:border-blue-300"
                     >
                       <Lightbulb className="w-5 h-5 text-yellow-500 mr-3 flex-shrink-0 mt-0.5" />
-                      <span className="text-gray-700">{suggestion}</span>
+                      <span className="text-gray-700">{suggestion.text}</span>
                     </button>
                   ))}
                 </div>
@@ -364,14 +390,14 @@ export default function AILab() {
                 </button>
               </div>
               <div className="flex flex-wrap gap-2">
-                {promptSuggestions.slice(0, 4).map((suggestion, index) => (
+                {promptSuggestions.slice(0, 4).map((suggestion) => (
                   <button
-                    key={index}
+                    key={suggestion.id}
                     onClick={() => handleSuggestionClick(suggestion)}
                     disabled={loading}
                     className="text-sm px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {suggestion}
+                    {suggestion.text}
                   </button>
                 ))}
               </div>
