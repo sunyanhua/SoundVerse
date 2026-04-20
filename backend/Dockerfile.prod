@@ -4,7 +4,12 @@ FROM python:3.11-slim
 # 设置工作目录
 WORKDIR /app
 
-# 安装系统依赖
+# 安装系统依赖（使用阿里云apt镜像）
+RUN cat > /etc/apt/sources.list << 'EOF'
+deb http://mirrors.aliyun.com/debian/ bookworm main
+deb http://mirrors.aliyun.com/debian/ bookworm-updates main
+deb http://mirrors.aliyun.com/debian-security/ bookworm-security main
+EOF
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
