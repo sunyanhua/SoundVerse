@@ -5,13 +5,11 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # 安装系统依赖（使用阿里云apt镜像）
-RUN rm -rf /etc/apt/sources.list.d/* \
-    && cat > /etc/apt/sources.list << 'EOF'
-deb http://mirrors.aliyun.com/debian/ trixie main
-deb http://mirrors.aliyun.com/debian/ trixie-updates main
-deb http://mirrors.aliyun.com/debian-security/ trixie-security main
-EOF
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN echo 'deb http://mirrors.aliyun.com/debian/ trixie main' > /etc/apt/sources.list \
+    && echo 'deb http://mirrors.aliyun.com/debian/ trixie-updates main' >> /etc/apt/sources.list \
+    && echo 'deb http://mirrors.aliyun.com/debian-security/ trixie-security main' >> /etc/apt/sources.list \
+    && rm -rf /etc/apt/sources.list.d/* \
+    && apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libffi-dev \

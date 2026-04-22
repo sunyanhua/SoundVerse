@@ -440,33 +440,6 @@ export default function UploadStudio() {
           </div>
         </div>
 
-        <div className="mb-6">
-          <label className="block text-sm font-semibold text-gray-700 mb-3">
-            选择裁切策略
-          </label>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {slicingStrategies.map((strategy) => (
-              <button
-                key={strategy.id}
-                onClick={() => setSelectedStrategy(strategy.id)}
-                className={`p-4 rounded-xl border-2 transition-all text-left ${
-                  selectedStrategy === strategy.id
-                    ? 'border-blue-500 bg-blue-50 shadow-md'
-                    : 'border-gray-200 hover:border-blue-300 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-gray-800">{strategy.label}</h3>
-                  {selectedStrategy === strategy.id && (
-                    <Check className="w-5 h-5 text-blue-500" />
-                  )}
-                </div>
-                <p className="text-sm text-gray-600">{strategy.description}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
         {processing && (
           <div className="mb-6 bg-blue-50 rounded-xl p-6 border border-blue-100">
             <div className="flex items-center justify-between mb-3">
@@ -529,8 +502,8 @@ export default function UploadStudio() {
             <span>AI 会自动识别音频中的有效内容，过滤噪音和无效片段</span>
           </li>
           <li className="flex items-start">
-            <span className="mr-2">🎯</span>
-            <span>根据您选择的策略，生成长度适中、语义完整的语弹片段</span>
+            <span className="mr-2">⏱️</span>
+            <span>文件上传成功后，将在后台运行智能裁切，您可以返回节目列表查看语弹数量变化</span>
           </li>
           <li className="flex items-start">
             <span className="mr-2">🏷️</span>

@@ -12,6 +12,7 @@ export default defineConfig(() => {
       port: 5173,
       strictPort: true, // 🚀 报错就停下，不准换 5174
       host: "0.0.0.0",
+      allowedHosts: ['soundverse.vbegin.com.cn', 'localhost', '127.0.0.1'],
       proxy: {
         '/api': {
           target: 'http://soundverse-api:8000',

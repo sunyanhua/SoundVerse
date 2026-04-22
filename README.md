@@ -9,7 +9,9 @@
 
 AI 驱动的"声音百科+社交语库"项目。通过 AI 技术对广播节目进行颗粒化重构，建立声音库，实现智能音频交互与生成。
 
-**当前阶段**: 2.0 DEMO 版开发，专注于核心功能精简与一键部署。
+**当前阶段**: 2.0 DEMO 版已部署生产环境，专注于功能完善与稳定性优化。
+
+**生产环境**: https://soundverse.vbegin.com.cn
 
 ---
 
@@ -54,10 +56,23 @@ curl http://localhost:8000/health
 ```
 **预期**: `{"status":"healthy","services":{"database":"connected","dashvector":"connected","redis":"connected"}}`
 
-### 🐳 Docker 启动（可选）
+### 🐳 Docker 启动
+
+#### 本地开发环境
 ```bash
 docker-compose up -d
 ```
+
+#### 生产环境部署（阿里云ECS）
+```bash
+# 使用生产配置
+docker-compose -f docker-compose.prod.yml up -d
+
+# 开启热重载监视
+docker-compose -f docker-compose.prod.yml watch
+```
+
+**生产环境访问**: https://soundverse.vbegin.com.cn
 
 ---
 
@@ -73,9 +88,8 @@ SoundVerse/
 │   │   │   └── AILab.tsx              # AI 对话实验室
 │   │   ├── components/         # 公共组件
 │   │   ├── contexts/           # React Context
-│   │   ├── lib/                # 工具库（Supabase）
+│   │   ├── lib/                # 工具库（API调用）
 │   │   └── App.tsx             # 应用入口
-│   ├── supabase/migrations/    # 数据库迁移脚本
 │   ├── package.json            # 依赖管理
 │   ├── Dockerfile              # Docker 配置
 │   └── vite.config.ts          # 构建配置
@@ -132,8 +146,8 @@ SoundVerse/
 - **构建工具**: Vite
 - **UI 组件**: lucide-react (图标)
 - **样式**: TailwindCSS
-- **数据库**: Supabase (PostgreSQL + RLS)
 - **状态管理**: React Context
+- **API集成**: FastAPI (直接调用)
 
 ### 基础设施
 - **对象存储**: 阿里云 OSS
@@ -178,12 +192,6 @@ SoundVerse/
 | `chat_sessions` | 聊天会话 | id, user_id, title |
 | `chat_messages` | 聊天消息 | id, session_id, content, segment_id |
 | `favorite_segments` | 收藏片段 | user_id, segment_id |
-
-### 前端数据库 (Supabase)
-| 表名 | 说明 |
-|------|------|
-| `audio_clips` | 用户上传的音频片段 |
-| `conversations` | 对话记录 |
 
 ---
 
@@ -264,7 +272,7 @@ cp backend/.env.example backend/.env
 
 # 前端配置
 cp frontend-demo/.env.example frontend-demo/.env
-# 编辑 frontend-demo/.env 填写 Supabase 配置
+# 编辑 frontend-demo/.env 填写 API 配置
 ```
 
 ### 关键配置项
@@ -321,11 +329,13 @@ cp frontend-demo/.env.example frontend-demo/.env
 - ✅ Docker 容器化部署
 - ✅ 依赖安装完成 (Python 154 个, npm 288 个)
 
-### 待开发（2.0 DEMO 版优先）
-- ⏳ 前端 Supabase 移除与 FastAPI 集成
-- ⏳ 后端认证简化与模拟用户支持
-- ⏳ 一键部署脚本与阿里云 SLB 适配
-- ⏳ 预设提示词（点赞保存）后端逻辑
+### 已完成（2.0 DEMO 版）
+- ✅ 前端 Supabase 移除与 FastAPI 集成
+- ✅ 后端认证简化与模拟用户支持
+- ✅ 阿里云 SLB 适配
+- ✅ 预设提示词（点赞保存）后端逻辑
+- ✅ Docker 生产环境部署完成
+- ✅ Celery Beat 定时任务配置
 
 ### 长期待开发
 - ⏳ 微信小程序前端
@@ -333,6 +343,7 @@ cp frontend-demo/.env.example frontend-demo/.env
 - ⏳ 微信认证系统
 - ⏳ 个性化推荐
 - ⏳ 性能优化和监控
+- ⏳ CI/CD 流水线
 
 ---
 
@@ -350,7 +361,6 @@ cp frontend-demo/.env.example frontend-demo/.env
 - ✅ 所有密钥通过环境变量管理
 - ✅ `.gitignore` 配置，敏感文件不会被提交
 - ✅ JWT 认证 (HS256 算法)
-- ✅ Row Level Security (Supabase 前端)
 - ✅ API 端点速率限制
 
 ---
@@ -378,5 +388,5 @@ MIT License
 
 ---
 
-**项目状态**: ✅ **健康，可立即开发**  
-**最后更新**: 2026-04-05
+**项目状态**: ✅ **健康，已部署生产环境**  
+**最后更新**: 2026-04-22

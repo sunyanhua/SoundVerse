@@ -47,8 +47,9 @@ services:
 
   # 后端API服务
   api:
-    # image: soundverse-api:prod
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
     container_name: SoundVerse-api
     depends_on:
       mysql:
@@ -61,16 +62,25 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
-      - GUNICORN_WORKERS=2
     env_file:
       - ./.env
     ports:
       - "8000:8000"
     volumes:
+      - ./backend:/app
       - ./backend/logs:/app/logs
       - ./backend/data:/app/data
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app
+          ignore:
+            - backend/logs/
+            - __pycache__/
+            - "*.pyc"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -82,7 +92,9 @@ services:
 
   # Celery Worker
   celery-worker:
-    image: soundverse-api:prod
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
     container_name: SoundVerse-celery-worker
     depends_on:
       - redis
@@ -91,6 +103,7 @@ services:
     env_file:
       - ./.env
     volumes:
+      - ./backend:/app
       - ./backend/logs:/app/logs
       - ./backend/data:/app/data
       - /etc/localtime:/etc/localtime:ro
@@ -101,7 +114,9 @@ services:
 
   # Celery Beat
   celery-beat:
-    image: soundverse-api:prod
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
     container_name: SoundVerse-celery-beat
     depends_on:
       - redis
@@ -110,6 +125,7 @@ services:
     env_file:
       - ./.env
     volumes:
+      - ./backend:/app
       - ./backend/logs:/app/logs
       - ./backend/data:/app/data
     restart: unless-stopped
@@ -118,12 +134,33 @@ services:
 
   # 前端
   frontend-demo:
-    image: soundverse-frontend:prod
+    build:
+      context: ./frontend-demo
+      dockerfile: Dockerfile.dev
     container_name: SoundVerse-frontend-demo
     ports:
       - "5173:5173"
+    volumes:
+      - ./frontend-demo/src:/app/src
+      - ./frontend-demo/public:/app/public
+      - ./frontend-demo/index.html:/app/index.html
+      - ./frontend-demo/vite.config.ts:/app/vite.config.ts
+      - ./frontend-demo/package.json:/app/package.json
+      - ./frontend-demo/tsconfig.json:/app/tsconfig.json
+      - ./frontend-demo/tsconfig.app.json:/app/tsconfig.app.json
+      - ./frontend-demo/tsconfig.node.json:/app/tsconfig.node.json
+      - ./frontend-demo/tailwind.config.js:/app/tailwind.config.js
+      - ./frontend-demo/postcss.config.js:/app/postcss.config.js
+      - ./frontend-demo/eslint.config.js:/app/eslint.config.js
+      - ./frontend-demo/.env:/app/.env
     environment:
-      - VITE_API_BASE_URL=https://soundverse.vbegin.com.cn
+      - NODE_ENV=development
+      - VITE_APP_MODE=demo
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend-demo/src
+          target: /app/src
     restart: unless-stopped
     networks:
       - SoundVerse-network
