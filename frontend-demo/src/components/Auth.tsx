@@ -2,13 +2,16 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Mic2, Lock, User } from 'lucide-react';
 
-// 预置用户凭据
+// 预置用户凭据（仅开发环境使用）
 const PRESET_USERNAME = "admin";
 const PRESET_PASSWORD = "soundverse2024";
 
+// 判断是否为演示模式（开发环境）
+const IS_DEMO_MODE = import.meta.env.VITE_APP_MODE === 'demo';
+
 export default function Auth() {
-  const [username, setUsername] = useState(PRESET_USERNAME);
-  const [password, setPassword] = useState(PRESET_PASSWORD);
+  const [username, setUsername] = useState(IS_DEMO_MODE ? PRESET_USERNAME : '');
+  const [password, setPassword] = useState(IS_DEMO_MODE ? PRESET_PASSWORD : '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { signIn } = useAuth();
@@ -19,9 +22,11 @@ export default function Auth() {
     setLoading(true);
 
     try {
-      // 验证是否使用预置凭据
-      if (username !== PRESET_USERNAME || password !== PRESET_PASSWORD) {
-        throw new Error('用户名或密码错误');
+      // 演示模式下验证预置凭据
+      if (IS_DEMO_MODE) {
+        if (username !== PRESET_USERNAME || password !== PRESET_PASSWORD) {
+          throw new Error('用户名或密码错误');
+        }
       }
       await signIn(username, password);
     } catch (err: any) {
@@ -64,7 +69,7 @@ export default function Auth() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="请输入用户名"
+                  placeholder={IS_DEMO_MODE ? "admin" : "请输入用户名"}
                   required
                 />
               </div>
@@ -81,7 +86,7 @@ export default function Auth() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="请输入密码"
+                  placeholder={IS_DEMO_MODE ? "soundverse2024" : "请输入密码"}
                   required
                 />
               </div>
@@ -96,10 +101,12 @@ export default function Auth() {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-gray-400 text-sm">
-            <p>请使用预置账号登录</p>
-            <p className="mt-1">用户名: admin | 密码: soundverse2024</p>
-          </div>
+          {IS_DEMO_MODE && (
+            <div className="mt-6 text-center text-gray-400 text-sm">
+              <p>请使用预置账号登录</p>
+              <p className="mt-1">用户名: admin | 密码: soundverse2024</p>
+            </div>
+          )}
         </div>
 
         <p className="text-center text-gray-400 text-sm mt-6">

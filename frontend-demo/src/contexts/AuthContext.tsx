@@ -1,11 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { api } from '../lib/api';
 
-const API_BASE_URL = 'http://localhost:8000/api';
-
-// 预置用户凭据
-const PRESET_USERNAME = "admin";
-const PRESET_PASSWORD = "soundverse2024";
+const API_BASE_URL = '/api';
 
 export interface User {
   id: string;
@@ -17,7 +13,7 @@ export interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signIn: (username?: string, password?: string) => Promise<void>;
+  signIn: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   isAuthenticated: boolean;
   token: string | null;
@@ -69,7 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // 真实登录
-  const signIn = async (username: string = PRESET_USERNAME, password: string = PRESET_PASSWORD) => {
+  const signIn = async (username: string, password: string) => {
     try {
       const response = await fetch(`${API_BASE_URL}/v1/auth/login`, {
         method: 'POST',

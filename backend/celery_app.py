@@ -38,6 +38,18 @@ celery_app.conf.update(
     task_max_retries=3,  # 最大重试次数3次
 )
 
+# Celery Beat 定时任务配置（每天凌晨0点执行）
+from celery.schedules import crontab
+celery_app.conf.beat_schedule = {
+    'reset-daily-counts-daily': {
+        'task': 'reset_daily_counts',
+        'schedule': crontab(hour=0, minute=0),  # 每天凌晨0点执行
+        'options': {
+            'expires': 3600,
+        },
+    },
+}
+
 # 自动发现任务
 celery_app.autodiscover_tasks(['tasks'])
 

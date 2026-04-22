@@ -47,7 +47,8 @@ services:
 
   # 后端API服务
   api:
-    image: soundverse-api:prod
+    # image: soundverse-api:prod
+    build: ./backend
     container_name: SoundVerse-api
     depends_on:
       mysql:

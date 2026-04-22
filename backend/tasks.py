@@ -248,3 +248,34 @@ def update_vector_index_task(segment_ids: list) -> dict:
             'error': str(e),
             'message': "更新向量索引失败",
         }
+
+
+@celery_app.task(name='reset_daily_counts')
+def reset_daily_counts_task() -> dict:
+    """
+    每日重置用户计数任务（Celery Beat定时执行）
+    每天凌晨0点(Asia/Shanghai)执行
+    """
+    try:
+        logger.info("开始重置每日用户计数")
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        try:
+            from database import AsyncSessionLocal
+            from services.user_service import reset_daily_counts
+
+            async def _async_reset():
+                async with AsyncSessionLocal() as db:
+                    await reset_daily_counts(db)
+
+            loop.run_until_complete(_async_reset())
+            logger.info("每日用户计数重置完成")
+            return {'success': True, 'message': '每日用户计数已重置'}
+        finally:
+            loop.close()
+
+    except Exception as e:
+        logger.error(f"重置每日计数任务失败: {str(e)}")
+        return {'success': False, 'error': str(e)}
